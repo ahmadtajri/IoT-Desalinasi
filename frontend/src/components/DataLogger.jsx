@@ -8,7 +8,8 @@ const DataLogger = ({ onIntervalChange, isLogging, onToggleLogging }) => {
     const intervals = [
         { value: '5', label: '5 Detik' },
         { value: '30', label: '30 Detik' },
-        { value: '60', label: '1 Menit' }
+        { value: '60', label: '1 Menit' },
+        { value: '1800', label: '30 Menit' }
     ];
 
     const handleIntervalChange = (newInterval) => {
@@ -57,7 +58,7 @@ const DataLogger = ({ onIntervalChange, isLogging, onToggleLogging }) => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                         Interval Pencatatan
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                         {intervals.map((int) => (
                             <button
                                 key={int.value}

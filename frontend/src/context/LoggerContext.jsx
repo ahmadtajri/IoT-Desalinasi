@@ -10,14 +10,16 @@ const LoggerContext = createContext({
     isRealtimeOnly: true,
     realtimeData: {
         humidity: {},
-        temperature: {},
-        waterLevel: {}
+        airTemperature: {},
+        waterTemperature: {}
     },
     sensorStatus: {
         humidity: {},
-        temperature: {},
-        waterLevel: {}
-    }
+        airTemperature: {},
+        waterTemperature: {}
+    },
+    pumpStatus: false, // Status ON/OFF dari ESP32
+    waterWeight: 0,    // Berat air hasil (cumulative in grams)
 });
 
 export const useLogger = () => useContext(LoggerContext);
@@ -31,7 +33,8 @@ export const LoggerProvider = ({ children }) => {
     // Dashboard Data State - NEW STRUCTURE
     const [realtimeData, setRealtimeData] = useState({
         humidity: {},
-        temperature: {},
+        airTemperature: {},
+        waterTemperature: {},
         waterLevel: {}
     });
 
@@ -39,14 +42,22 @@ export const LoggerProvider = ({ children }) => {
     // true = active (receiving data), false = inactive (no data/error)
     const [sensorStatus, setSensorStatus] = useState({
         humidity: {},
-        temperature: {},
+        airTemperature: {},
+        waterTemperature: {},
         waterLevel: {}
     });
+
+    // Pump/Relay Status from ESP32 (ON/OFF)
+    const [pumpStatus, setPumpStatus] = useState(false);
+
+    // Water Weight Result (grams)
+    const [waterWeight, setWaterWeight] = useState(0);
 
     // Last update timestamps for detecting inactive sensors
     const lastUpdateRef = useRef({
         humidity: {},
-        temperature: {},
+        airTemperature: {},
+        waterTemperature: {},
         waterLevel: {}
     });
 
@@ -70,74 +81,62 @@ export const LoggerProvider = ({ children }) => {
         return () => clearInterval(intervalId);
     }, []);
 
-    // 2. REALTIME DATA GENERATOR (Runs every 1 second in Frontend)
-    // Simulates sensor data - some sensors are active, some are inactive
+    // 2. REALTIME DATA FETCHER (Runs every 1 second to get data from Backend)
+    // Replaces the mock data generator with real backend data
     useEffect(() => {
-        const generateData = () => {
-            const now = Date.now();
+        const fetchRealtimeData = async () => {
+            try {
+                const data = await sensorService.getRealtimeData();
 
-            // Generate Humidity sensors H1-H7
-            // Simulate: H1-H4 always active, H5-H7 randomly active/inactive
-            const humidity = {};
-            const humidityStatus = {};
+                // Update state with data from backend
+                setRealtimeData(data.realtimeData);
+                setSensorStatus(data.sensorStatus);
+                setPumpStatus(data.pumpStatus);
+                setWaterWeight(data.waterWeight);
 
-            for (let i = 1; i <= 7; i++) {
-                const key = `H${i}`;
-                // H1-H4 always active, H5-H7 have 70% chance of being active
-                const isActive = i <= 4 ? true : Math.random() > 0.3;
-
-                humidityStatus[key] = isActive;
-
-                if (isActive) {
-                    humidity[key] = parseFloat((50 + Math.random() * 40).toFixed(1));
-                    lastUpdateRef.current.humidity[key] = now;
-                } else {
-                    // Return null or last known value for inactive sensors
-                    humidity[key] = null;
-                }
+                // Update last update timestamps
+                const now = Date.now();
+                Object.keys(data.realtimeData.humidity).forEach(key => {
+                    if (data.realtimeData.humidity[key] !== null) {
+                        lastUpdateRef.current.humidity[key] = now;
+                    }
+                });
+                Object.keys(data.realtimeData.airTemperature).forEach(key => {
+                    if (data.realtimeData.airTemperature[key] !== null) {
+                        lastUpdateRef.current.airTemperature[key] = now;
+                    }
+                });
+                Object.keys(data.realtimeData.waterTemperature).forEach(key => {
+                    if (data.realtimeData.waterTemperature[key] !== null) {
+                        lastUpdateRef.current.waterTemperature[key] = now;
+                    }
+                });
+                Object.keys(data.realtimeData.waterLevel).forEach(key => {
+                    if (data.realtimeData.waterLevel[key] !== null) {
+                        lastUpdateRef.current.waterLevel[key] = now;
+                    }
+                });
+            } catch (error) {
+                console.error("Failed to fetch realtime data:", error);
+                // On error, set all sensors to inactive/null
+                // This will happen when backend is stopped
+                setRealtimeData({
+                    humidity: {},
+                    airTemperature: {},
+                    waterTemperature: {},
+                    waterLevel: {}
+                });
+                setSensorStatus({
+                    humidity: {},
+                    airTemperature: {},
+                    waterTemperature: {},
+                    waterLevel: {}
+                });
             }
-
-            // Generate Temperature sensors T1-T15
-            // Simulate: T1-T8 always active, T9-T15 randomly active/inactive
-            const temperature = {};
-            const temperatureStatus = {};
-
-            for (let i = 1; i <= 15; i++) {
-                const key = `T${i}`;
-                // T1-T8 always active, T9-T15 have 60% chance of being active
-                const isActive = i <= 8 ? true : Math.random() > 0.4;
-
-                temperatureStatus[key] = isActive;
-
-                if (isActive) {
-                    // Max 70 degrees
-                    temperature[key] = parseFloat((20 + Math.random() * 50).toFixed(1)); // 20-70°C
-                    lastUpdateRef.current.temperature[key] = now;
-                } else {
-                    temperature[key] = null;
-                }
-            }
-
-            // Generate Water Level sensor WL1
-            const waterLevel = {};
-            const waterLevelStatus = {};
-            const wlKey = 'WL1';
-            const isWlActive = true; // Always active for now
-
-            waterLevelStatus[wlKey] = isWlActive;
-            if (isWlActive) {
-                waterLevel[wlKey] = parseFloat((10 + Math.random() * 90).toFixed(1)); // 10-100%
-                lastUpdateRef.current.waterLevel[wlKey] = now;
-            } else {
-                waterLevel[wlKey] = null;
-            }
-
-            setRealtimeData({ humidity, temperature, waterLevel });
-            setSensorStatus({ humidity: humidityStatus, temperature: temperatureStatus, waterLevel: waterLevelStatus });
         };
 
-        generateData();
-        const intervalId = setInterval(generateData, 1000);
+        fetchRealtimeData(); // Initial fetch
+        const intervalId = setInterval(fetchRealtimeData, 1000); // Fetch every 1 second
         return () => clearInterval(intervalId);
     }, []);
 
@@ -149,11 +148,10 @@ export const LoggerProvider = ({ children }) => {
                 setIsLogging(false);
             } else {
                 // Configure with specific sensors if provided
-                // Values can be: 'all', 'none', or specific sensor ID like 'H1'
+                // Values can be: 'all', 'none', or specific sensor ID like 'RH1'
                 const config = sensorConfig || {
                     humidity: 'all',
-                    temperature: 'all',
-                    waterLevel: 'all'
+                    temperature: 'all'
                 };
                 console.log('[LoggerContext] Starting logger with config:', config);
                 await sensorService.configLogger(logInterval, config);
@@ -187,7 +185,10 @@ export const LoggerProvider = ({ children }) => {
             changeInterval,
             logCount,
             realtimeData,
-            sensorStatus
+            sensorStatus,
+            pumpStatus,
+            setPumpStatus,
+            waterWeight
         }}>
             {children}
         </LoggerContext.Provider>

@@ -114,10 +114,10 @@ const SensorController = {
             const { sensorType } = req.params;
             console.log('deleteBySensorType called with type:', sensorType);
 
-            const validTypes = ['humidity', 'temperature', 'waterLevel'];
+            const validTypes = ['humidity', 'temperature'];
             if (!validTypes.includes(sensorType)) {
                 return res.status(400).json({
-                    error: 'Invalid sensor type. Must be: humidity, temperature, or waterLevel',
+                    error: 'Invalid sensor type. Must be: humidity or temperature',
                     received: sensorType
                 });
             }
@@ -164,6 +164,66 @@ const SensorController = {
             res.json(status);
         } catch (error) {
             console.error('Error in getDatabaseStatus:', error);
+            res.status(500).json({ error: error.message });
+        }
+    },
+
+    async getRealtimeData(req, res) {
+        try {
+            // Get data from ESP32 cache (real-time data from ESP32 devices)
+            const ESP32Controller = require('./ESP32Controller');
+            const cache = ESP32Controller.getCache();
+
+            // Organize data for frontend consumption
+            const realtimeData = {
+                humidity: {},
+                airTemperature: {},
+                waterTemperature: {},
+                waterLevel: {}
+            };
+
+            const sensorStatus = {
+                humidity: {},
+                airTemperature: {},
+                waterTemperature: {},
+                waterLevel: {}
+            };
+
+            // Process humidity data from ESP32 cache
+            for (const [sensorId, data] of Object.entries(cache.humidity || {})) {
+                realtimeData.humidity[sensorId] = data.value;
+                sensorStatus.humidity[sensorId] = data.status === 'active';
+            }
+
+            // Process temperature data (T1-T7 = air, T8-T15 = water)
+            for (const [sensorId, data] of Object.entries(cache.temperature || {})) {
+                const sensorNum = parseInt(sensorId.substring(1));
+                if (sensorNum <= 7) {
+                    realtimeData.airTemperature[sensorId] = data.value;
+                    sensorStatus.airTemperature[sensorId] = data.status === 'active';
+                } else {
+                    realtimeData.waterTemperature[sensorId] = data.value;
+                    sensorStatus.waterTemperature[sensorId] = data.status === 'active';
+                }
+            }
+
+            // Process water level data
+            for (const [sensorId, data] of Object.entries(cache.waterLevel || {})) {
+                realtimeData.waterLevel[sensorId] = data.value;
+                sensorStatus.waterLevel[sensorId] = data.status === 'active';
+            }
+
+            res.json({
+                realtimeData,
+                sensorStatus,
+                pumpStatus: cache.valveStatus?.status === 'open', // Valve open = pump on
+                valveStatus: cache.valveStatus?.status || 'closed', // Send valve status
+                waterWeight: cache.waterWeight?.WW1?.value ?? null, // Get WW1 value if available
+                lastUpdate: cache.lastUpdate,
+                timestamp: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Error in getRealtimeData:', error);
             res.status(500).json({ error: error.message });
         }
     }

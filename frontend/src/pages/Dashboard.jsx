@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import SensorSelectCard from '../components/SensorSelectCard';
 import WaterLevelCard from '../components/WaterLevelCard';
+import WaterWeightCard from '../components/WaterWeightCard';
+import CardsCarousel from '../components/CardsCarousel';
 import SensorChart from '../components/SensorChart';
 import sensorService from '../services/sensorService';
 import { useLogger } from '../context/LoggerContext';
-import { Thermometer, Droplets, AlertTriangle, AlertOctagon, X, CheckCircle, XCircle, Waves } from 'lucide-react';
+import { Thermometer, Droplets, AlertTriangle, AlertOctagon, X, CheckCircle, XCircle } from 'lucide-react';
 
 const Dashboard = () => {
-    // Get Realtime Data Stream and Sensor Status
-    const { realtimeData, sensorStatus } = useLogger();
+    // Get Realtime Data Stream, Sensor Status, and Pump Status
+    const { realtimeData, sensorStatus, pumpStatus, waterWeight } = useLogger();
+
+    // Defensive check to avoid runtime errors
+    const isWaterWeightActive = waterWeight !== null && waterWeight !== undefined;
+
+    // Helper function to format values to 2 decimal places
+    const formatValue = (val) => {
+        if (val === null || val === undefined || isNaN(val)) return '--';
+        return Number(val).toFixed(2);
+    };
 
     // Selected sensors for each card
-    const [selectedHumidity, setSelectedHumidity] = useState('H1');
-    const [selectedTemperature, setSelectedTemperature] = useState('T1');
+    const [selectedHumidity, setSelectedHumidity] = useState('RH1');
+    const [selectedAirTemp, setSelectedAirTemp] = useState('T1');
+    const [selectedWaterTemp, setSelectedWaterTemp] = useState('T8');
     const [selectedWaterLevel, setSelectedWaterLevel] = useState('WL1');
 
     const [dbStatus, setDbStatus] = useState(null);
@@ -23,18 +35,25 @@ const Dashboard = () => {
 
     // Options for dropdown
     const humidityOptions = Array.from({ length: 7 }, (_, i) => ({
-        value: `H${i + 1}`,
-        label: `Kelembapan (H${i + 1})`
+        value: `RH${i + 1}`,
+        label: `Kelembapan (RH${i + 1})`
     }));
 
-    const temperatureOptions = Array.from({ length: 15 }, (_, i) => ({
+    const airTempOptions = Array.from({ length: 7 }, (_, i) => ({
         value: `T${i + 1}`,
-        label: `Suhu (T${i + 1})`
+        label: `Suhu Udara (T${i + 1})`
     }));
 
-    const waterLevelOptions = [
-        { value: 'WL1', label: 'Water Level (WL1)' }
-    ];
+    const waterTempOptions = Array.from({ length: 8 }, (_, i) => ({
+        value: `T${i + 8}`,
+        label: `Suhu Air (T${i + 8})`
+    }));
+
+    // Define ALL expected sensors for status display
+    const allHumiditySensors = ['RH1', 'RH2', 'RH3', 'RH4', 'RH5', 'RH6', 'RH7'];
+    const allAirTempSensors = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    const allWaterTempSensors = ['T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15'];
+    const allWaterLevelSensors = ['WL1'];
 
     // Fetch database status
     useEffect(() => {
@@ -52,15 +71,14 @@ const Dashboard = () => {
         return () => clearInterval(interval);
     }, []);
 
-    // Update chart when realtime data changes
     useEffect(() => {
-        if (!realtimeData || !realtimeData.humidity || !realtimeData.temperature || !realtimeData.waterLevel) return;
+        if (!realtimeData || !realtimeData.humidity || !realtimeData.airTemperature || !realtimeData.waterTemperature) return;
 
         const humidValue = realtimeData.humidity[selectedHumidity];
-        const tempValue = realtimeData.temperature[selectedTemperature];
-        const waterValue = realtimeData.waterLevel[selectedWaterLevel];
+        const airTempValue = realtimeData.airTemperature[selectedAirTemp];
+        const waterTempValue = realtimeData.waterTemperature[selectedWaterTemp];
 
-        if (humidValue === null && tempValue === null && waterValue === null) return;
+        if (humidValue === null && airTempValue === null && waterTempValue === null) return;
 
         const timeString = new Date().toLocaleTimeString('id-ID', {
             hour: '2-digit',
@@ -72,39 +90,44 @@ const Dashboard = () => {
             const newPoint = {
                 time: timeString,
                 humidity: humidValue ?? prev[prev.length - 1]?.humidity ?? 0,
-                temperature: tempValue ?? prev[prev.length - 1]?.temperature ?? 0,
-                waterLevel: waterValue ?? prev[prev.length - 1]?.waterLevel ?? 0
+                airTemp: airTempValue ?? prev[prev.length - 1]?.airTemp ?? 0,
+                waterTemp: waterTempValue ?? prev[prev.length - 1]?.waterTemp ?? 0
             };
 
             const newHistory = [...prev, newPoint];
             if (newHistory.length > 20) return newHistory.slice(newHistory.length - 20);
             return newHistory;
         });
-    }, [realtimeData, selectedHumidity, selectedTemperature, selectedWaterLevel]);
+    }, [realtimeData, selectedHumidity, selectedAirTemp, selectedWaterTemp]);
 
     // Clear chart when switching sensors
     useEffect(() => {
         setChartData([]);
-    }, [selectedHumidity, selectedTemperature, selectedWaterLevel]);
+    }, [selectedHumidity, selectedAirTemp, selectedWaterTemp]);
 
     // Get current values
     const currentHumidityValue = realtimeData?.humidity?.[selectedHumidity] ?? 0;
-    const currentTemperatureValue = realtimeData?.temperature?.[selectedTemperature] ?? 0;
+    const currentAirTempValue = realtimeData?.airTemperature?.[selectedAirTemp] ?? 0;
+    const currentWaterTempValue = realtimeData?.waterTemperature?.[selectedWaterTemp] ?? 0;
     const currentWaterLevelValue = realtimeData?.waterLevel?.[selectedWaterLevel] ?? 0;
 
     // Count active sensors
     const activeHumiditySensors = sensorStatus?.humidity
         ? Object.values(sensorStatus.humidity).filter(s => s).length
         : 0;
-    const activeTempSensors = sensorStatus?.temperature
-        ? Object.values(sensorStatus.temperature).filter(s => s).length
+    const activeAirTempSensors = sensorStatus?.airTemperature
+        ? Object.values(sensorStatus.airTemperature).filter(s => s).length
+        : 0;
+    const activeWaterTempSensors = sensorStatus?.waterTemperature
+        ? Object.values(sensorStatus.waterTemperature).filter(s => s).length
         : 0;
     const activeWaterLevelSensors = sensorStatus?.waterLevel
         ? Object.values(sensorStatus.waterLevel).filter(s => s).length
         : 0;
 
-    const totalActiveSensors = activeHumiditySensors + activeTempSensors + activeWaterLevelSensors;
-    const totalInactiveSensors = (7 + 15 + 1) - totalActiveSensors;
+    const totalActiveSensors = activeHumiditySensors + activeAirTempSensors + activeWaterTempSensors + activeWaterLevelSensors;
+    // 7 RH + 7 AirTemp + 8 WaterTemp + 1 WaterLevel = 23 sensors
+    const totalInactiveSensors = (7 + 7 + 8 + 1) - totalActiveSensors;
 
     return (
         <div className="p-4 md:p-6 bg-gray-50 min-h-screen">
@@ -199,17 +222,18 @@ const Dashboard = () => {
                             <div className="mb-6">
                                 <div className="flex items-center gap-2 mb-4">
                                     <Droplets size={20} className="text-blue-500" />
-                                    <h3 className="font-bold text-gray-800">Sensor Kelembapan (H1-H7)</h3>
+                                    <h3 className="font-bold text-gray-800">Sensor Kelembapan (RH1-RH7)</h3>
                                     <span className="text-sm text-gray-500 ml-auto">
                                         {activeHumiditySensors}/7 Aktif
                                     </span>
                                 </div>
                                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-3">
-                                    {Object.entries(sensorStatus?.humidity || {}).map(([key, isActive]) => {
-                                        const value = realtimeData?.humidity?.[key];
+                                    {allHumiditySensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.humidity?.[sensorId] ?? false;
+                                        const value = realtimeData?.humidity?.[sensorId];
                                         return (
                                             <div
-                                                key={key}
+                                                key={sensorId}
                                                 className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive
                                                     ? 'bg-green-50 border-green-200'
                                                     : 'bg-red-50 border-red-200'
@@ -226,10 +250,10 @@ const Dashboard = () => {
                                                     )}
                                                 </div>
                                                 <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>
-                                                    {key}
+                                                    {sensorId}
                                                 </span>
                                                 <span className={`text-lg font-bold mt-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
-                                                    {isActive && value !== null ? `${value}%` : '--'}
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}%` : '--'}
                                                 </span>
                                             </div>
                                         );
@@ -237,21 +261,22 @@ const Dashboard = () => {
                                 </div>
                             </div>
 
-                            {/* Temperature Sensors */}
+                            {/* Temperature Sensors - Air */}
                             <div className="mb-6">
                                 <div className="flex items-center gap-2 mb-4">
                                     <Thermometer size={20} className="text-orange-500" />
-                                    <h3 className="font-bold text-gray-800">Sensor Suhu (T1-T15)</h3>
+                                    <h3 className="font-bold text-gray-800">Sensor Suhu Udara (T1-T7)</h3>
                                     <span className="text-sm text-gray-500 ml-auto">
-                                        {activeTempSensors}/15 Aktif
+                                        {activeAirTempSensors}/7 Aktif
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-3">
-                                    {Object.entries(sensorStatus?.temperature || {}).map(([key, isActive]) => {
-                                        const value = realtimeData?.temperature?.[key];
+                                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 gap-3">
+                                    {allAirTempSensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.airTemperature?.[sensorId] ?? false;
+                                        const value = realtimeData?.airTemperature?.[sensorId];
                                         return (
                                             <div
-                                                key={key}
+                                                key={sensorId}
                                                 className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive
                                                     ? 'bg-green-50 border-green-200'
                                                     : 'bg-red-50 border-red-200'
@@ -268,10 +293,53 @@ const Dashboard = () => {
                                                     )}
                                                 </div>
                                                 <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>
-                                                    {key}
+                                                    {sensorId}
                                                 </span>
                                                 <span className={`text-lg font-bold mt-1 ${isActive ? 'text-orange-600' : 'text-gray-400'}`}>
-                                                    {isActive && value !== null ? `${value}°` : '--'}
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}°` : '--'}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Temperature Sensors - Water */}
+                            <div className="mb-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Thermometer size={20} className="text-cyan-500" />
+                                    <h3 className="font-bold text-gray-800">Sensor Suhu Air (T8-T15)</h3>
+                                    <span className="text-sm text-gray-500 ml-auto">
+                                        {activeWaterTempSensors}/8 Aktif
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-3">
+                                    {allWaterTempSensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.waterTemperature?.[sensorId] ?? false;
+                                        const value = realtimeData?.waterTemperature?.[sensorId];
+                                        return (
+                                            <div
+                                                key={sensorId}
+                                                className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive
+                                                    ? 'bg-green-50 border-green-200'
+                                                    : 'bg-red-50 border-red-200'
+                                                    }`}
+                                            >
+                                                <div className="relative mb-1">
+                                                    {isActive ? (
+                                                        <>
+                                                            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                                            <div className="w-3 h-3 bg-green-500 rounded-full animate-ping absolute top-0 left-0 opacity-75"></div>
+                                                        </>
+                                                    ) : (
+                                                        <div className="w-3 h-3 bg-red-400 rounded-full"></div>
+                                                    )}
+                                                </div>
+                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>
+                                                    {sensorId}
+                                                </span>
+                                                <span className={`text-lg font-bold mt-1 ${isActive ? 'text-cyan-600' : 'text-gray-400'}`}>
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}°` : '--'}
                                                 </span>
                                             </div>
                                         );
@@ -282,18 +350,19 @@ const Dashboard = () => {
                             {/* Water Level Sensors */}
                             <div>
                                 <div className="flex items-center gap-2 mb-4">
-                                    <Waves size={20} className="text-cyan-500" />
+                                    <Droplets size={20} className="text-cyan-500" />
                                     <h3 className="font-bold text-gray-800">Sensor Water Level</h3>
                                     <span className="text-sm text-gray-500 ml-auto">
                                         {activeWaterLevelSensors}/1 Aktif
                                     </span>
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                    {Object.entries(sensorStatus?.waterLevel || {}).map(([key, isActive]) => {
-                                        const value = realtimeData?.waterLevel?.[key];
+                                    {allWaterLevelSensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.waterLevel?.[sensorId] ?? false;
+                                        const value = realtimeData?.waterLevel?.[sensorId];
                                         return (
                                             <div
-                                                key={key}
+                                                key={sensorId}
                                                 className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive
                                                     ? 'bg-green-50 border-green-200'
                                                     : 'bg-red-50 border-red-200'
@@ -310,14 +379,50 @@ const Dashboard = () => {
                                                     )}
                                                 </div>
                                                 <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>
-                                                    {key}
+                                                    {sensorId}
                                                 </span>
                                                 <span className={`text-lg font-bold mt-1 ${isActive ? 'text-cyan-600' : 'text-gray-400'}`}>
-                                                    {isActive && value !== null ? `${value}%` : '--'}
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}%` : '--'}
                                                 </span>
                                             </div>
                                         );
                                     })}
+                                </div>
+                            </div>
+
+                            {/* Water Weight / Desalination Result Sensor */}
+                            <div className="mt-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Droplets size={20} className="text-teal-500" />
+                                    <h3 className="font-bold text-gray-800">Sensor Hasil Desalinasi</h3>
+                                    <span className="text-sm text-gray-500 ml-auto">
+                                        {isWaterWeightActive ? '1' : '0'}/1 Aktif
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                    <div
+                                        className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isWaterWeightActive
+                                            ? 'bg-green-50 border-green-200'
+                                            : 'bg-red-50 border-red-200'
+                                            }`}
+                                    >
+                                        <div className="relative mb-1">
+                                            {isWaterWeightActive ? (
+                                                <>
+                                                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                                    <div className="w-3 h-3 bg-green-500 rounded-full animate-ping absolute top-0 left-0 opacity-75"></div>
+                                                </>
+                                            ) : (
+                                                <div className="w-3 h-3 bg-red-400 rounded-full"></div>
+                                            )}
+                                        </div>
+                                        <span className={`font-bold text-sm ${isWaterWeightActive ? 'text-green-700' : 'text-red-600'}`}>
+                                            Water Weight
+                                        </span>
+                                        <span className={`text-lg font-bold mt-1 ${isWaterWeightActive ? 'text-teal-600' : 'text-gray-400'}`}>
+                                            {isWaterWeightActive ? `${formatValue(waterWeight)} g` : '--'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -347,43 +452,64 @@ const Dashboard = () => {
                 </div>
             )}
 
-            {/* Main Content - Three Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                {/* Card 1: Kelembapan (H1-H6) */}
-                <SensorSelectCard
-                    title="Kelembapan (Humidity)"
-                    subtitle="Monitoring kelembapan udara"
-                    value={currentHumidityValue}
-                    unit="%"
-                    icon={Droplets}
-                    colorTheme="blue"
-                    options={humidityOptions}
-                    selectedOption={selectedHumidity}
-                    onSelectChange={setSelectedHumidity}
-                    sensorStatus={sensorStatus?.humidity || {}}
-                    max={100}
-                />
+            {/* Cards Section with Carousel behavior */}
+            <div className="mb-8">
+                <CardsCarousel>
+                    {/* Card 1: Kelembapan (RH1-RH7) */}
+                    <SensorSelectCard
+                        title="Humidity"
+                        subtitle="Monitoring kelembapan udara"
+                        value={currentHumidityValue}
+                        unit="%"
+                        icon={Droplets}
+                        colorTheme="blue"
+                        options={humidityOptions}
+                        selectedOption={selectedHumidity}
+                        onSelectChange={setSelectedHumidity}
+                        sensorStatus={sensorStatus?.humidity || {}}
+                        max={100}
+                    />
 
-                {/* Card 2: Suhu (T1-T12) */}
-                <SensorSelectCard
-                    title="Suhu (Temperature)"
-                    subtitle="Monitoring suhu"
-                    value={currentTemperatureValue}
-                    unit="°C"
-                    icon={Thermometer}
-                    colorTheme="orange"
-                    options={temperatureOptions}
-                    selectedOption={selectedTemperature}
-                    onSelectChange={setSelectedTemperature}
-                    sensorStatus={sensorStatus?.temperature || {}}
-                    max={70}
-                />
+                    {/* Card 2: Suhu Udara (T1-T7) */}
+                    <SensorSelectCard
+                        title="Suhu Udara"
+                        subtitle="Monitoring Suhu udara"
+                        value={currentAirTempValue}
+                        unit="°C"
+                        icon={Thermometer}
+                        colorTheme="orange"
+                        options={airTempOptions}
+                        selectedOption={selectedAirTemp}
+                        onSelectChange={setSelectedAirTemp}
+                        sensorStatus={sensorStatus?.airTemperature || {}}
+                    />
 
-                {/* Card 3: Water Level */}
-                <WaterLevelCard
-                    value={currentWaterLevelValue}
-                    status={sensorStatus?.waterLevel?.[selectedWaterLevel] ?? true}
-                />
+                    {/* Card 3: Suhu Air (T8-T15) */}
+                    <SensorSelectCard
+                        title="Suhu Air"
+                        subtitle="Monitoring Suhu Air"
+                        value={currentWaterTempValue}
+                        unit="°C"
+                        icon={Thermometer}
+                        colorTheme="cyan"
+                        options={waterTempOptions}
+                        selectedOption={selectedWaterTemp}
+                        onSelectChange={setSelectedWaterTemp}
+                        sensorStatus={sensorStatus?.waterTemperature || {}}
+                    />
+
+                    {/* Card 3: Water Level */}
+                    <WaterLevelCard
+                        value={currentWaterLevelValue}
+                        status={sensorStatus?.waterLevel?.[selectedWaterLevel] ?? true}
+                        pumpStatus={pumpStatus}
+                    />
+
+                    {/* Card 4: Water Weight Result */}
+                    <WaterWeightCard
+                        weightInGrams={waterWeight}
+                    />
+                </CardsCarousel>
             </div>
 
             {/* Chart Section */}
@@ -391,15 +517,15 @@ const Dashboard = () => {
                 <div className="mb-6">
                     <h3 className="text-xl font-bold text-gray-800">Grafik Real-time</h3>
                     <p className="text-gray-500 text-sm mt-1">
-                        Menampilkan data {selectedHumidity} (Kelembapan), {selectedTemperature} (Suhu), dan {selectedWaterLevel} (Water Level)
+                        Menampilkan data {selectedHumidity} (Kelembapan), {selectedAirTemp} (Suhu Udara), dan {selectedWaterTemp} (Suhu Air)
                     </p>
                 </div>
                 <SensorChart
                     data={chartData}
                     dataKeys={[
                         { key: 'humidity', name: `Kelembapan (${selectedHumidity})`, color: '#3b82f6' },
-                        { key: 'temperature', name: `Suhu (${selectedTemperature})`, color: '#f97316' },
-                        { key: 'waterLevel', name: `Water Level (${selectedWaterLevel})`, color: '#06b6d4' }
+                        { key: 'airTemp', name: `Suhu Udara (${selectedAirTemp})`, color: '#f97316' },
+                        { key: 'waterTemp', name: `Suhu Air (${selectedWaterTemp})`, color: '#06b6d4' }
                     ]}
                 />
             </div>

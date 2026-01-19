@@ -1,15 +1,20 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, ChevronLeft, ChevronRight, Activity, X, FileImage } from 'lucide-react';
+import { LayoutDashboard, FileText, ChevronLeft, ChevronRight, Activity, X, FileImage, Power, Cog } from 'lucide-react';
 import logoIcon from '../assets/icons/icon-x192.png';
 import skemaDesalinasi from '../assets/skema-desalinasi.svg';
 import useBackendStatus from '../hooks/useBackendStatus';
+import { useLogger } from '../context/LoggerContext';
 
 const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
     const [isCollapsed, setIsCollapsed] = useState(false);
     const [showSchemaModal, setShowSchemaModal] = useState(false);
     const location = useLocation();
     const { isOnline, isChecking } = useBackendStatus(5000);
+
+    // Get pump/machine status from LoggerContext (data from ESP32)
+    const { pumpStatus } = useLogger();
+    const isMachineRunning = pumpStatus === true || pumpStatus === 'on' || pumpStatus === 'ON' || pumpStatus === 1;
 
     const isActive = (path) => location.pathname === path;
 
@@ -49,7 +54,7 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
             {/* Sidebar Container */}
             <div
                 className={`
-                    fixed md:relative inset-y-0 left-0 z-50
+                    fixed md:relative inset-y-0 left-0 z-50 shrink-0
                     bg-white border-r border-gray-200 flex flex-col 
                     transition-all duration-300 ease-in-out
                     ${isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
@@ -57,10 +62,10 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
                     w-72
                 `}
             >
-                {/* Desktop Toggle Button */}
+                {/* Desktop Toggle Button - positioned at edge but inside container area */}
                 <button
                     onClick={() => setIsCollapsed(!isCollapsed)}
-                    className="hidden md:flex absolute -right-3 top-9 bg-white border border-gray-200 rounded-full p-1.5 shadow-sm hover:bg-gray-50 text-gray-500 hover:text-blue-600 transition-colors z-10"
+                    className="hidden md:flex absolute right-0 top-9 translate-x-1/2 bg-white border border-gray-200 rounded-full p-1.5 shadow-md hover:bg-gray-50 text-gray-500 hover:text-blue-600 transition-colors z-[60]"
                 >
                     {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
                 </button>
@@ -148,10 +153,12 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
 
                 {/* Footer Status */}
                 <div className="p-4 border-t border-gray-100 mt-auto">
-                    <div className={`bg-gray-50 rounded-xl transition-all duration-300 ${isCollapsed ? 'md:p-3 md:flex md:justify-center' : 'p-4'}`}>
+                    <div className={`bg-gray-50 rounded-xl transition-all duration-300 ${isCollapsed ? 'md:p-3 md:flex md:flex-col md:items-center md:gap-2' : 'p-4'}`}>
                         <div className={`${isCollapsed ? 'md:hidden' : 'block'}`}>
                             <p className="text-xs text-gray-500 font-medium uppercase mb-3">System Status</p>
-                            <div className={`flex items-center gap-3 bg-white p-2.5 rounded-lg border shadow-sm transition-colors ${isOnline ? 'border-green-100' : 'border-red-100'
+
+                            {/* Backend Connection Status */}
+                            <div className={`flex items-center gap-3 bg-white p-2.5 rounded-lg border shadow-sm transition-colors mb-2 ${isOnline ? 'border-green-100' : 'border-red-100'
                                 }`}>
                                 <div className="relative shrink-0">
                                     <div className={`w-3 h-3 bg-${statusColor}-500 rounded-full`}></div>
@@ -166,17 +173,53 @@ const Sidebar = ({ isMobileOpen, setIsMobileOpen }) => {
                                     <p className="text-[10px] text-gray-400 truncate">{statusSubtext}</p>
                                 </div>
                             </div>
+
+                            {/* Machine Running Status */}
+                            <div className={`flex items-center gap-3 bg-white p-2.5 rounded-lg border shadow-sm transition-colors ${isMachineRunning ? 'border-green-100' : 'border-gray-200'
+                                }`}>
+                                <div className="relative shrink-0">
+                                    <div className={`w-3 h-3 ${isMachineRunning ? 'bg-green-500' : 'bg-gray-400'} rounded-full`}></div>
+                                    {isMachineRunning && (
+                                        <div className="w-3 h-3 bg-green-500 rounded-full animate-ping absolute top-0 left-0 opacity-75"></div>
+                                    )}
+                                </div>
+                                <div className="min-w-0">
+                                    <p className={`text-sm font-semibold truncate ${isMachineRunning ? 'text-gray-700' : 'text-gray-500'}`}>
+                                        Mesin Desalinasi
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 truncate">
+                                        {isMachineRunning ? 'Sedang Berjalan' : 'Tidak Aktif'}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Collapsed Icon Mode (Desktop Only) */}
-                        <div className={`hidden ${isCollapsed ? 'md:block' : ''} relative group cursor-help`}>
-                            <Activity size={20} className={`text-${statusColor}-500`} />
-                            <div className={`w-2 h-2 bg-${statusColor}-500 rounded-full absolute -top-0.5 -right-0.5 ${isOnline ? 'animate-pulse' : ''}`}></div>
+                        <div className={`hidden ${isCollapsed ? 'md:flex md:flex-col md:gap-2' : ''} relative`}>
+                            {/* System Status Icon */}
+                            <div className="relative group cursor-help">
+                                <Activity size={20} className={`text-${statusColor}-500`} />
+                                <div className={`w-2 h-2 bg-${statusColor}-500 rounded-full absolute -top-0.5 -right-0.5 ${isOnline ? 'animate-pulse' : ''}`}></div>
 
-                            {/* Tooltip */}
-                            <div className="absolute left-full ml-4 bottom-0 px-3 py-2 bg-white border border-gray-100 text-gray-700 text-xs rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-20 shadow-xl">
-                                <p className={`font-bold ${isOnline ? 'text-green-600' : 'text-red-600'}`}>{statusText}</p>
-                                <p className="text-gray-400">{statusSubtext}</p>
+                                {/* Tooltip */}
+                                <div className="absolute left-full ml-4 bottom-0 px-3 py-2 bg-white border border-gray-100 text-gray-700 text-xs rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-20 shadow-xl">
+                                    <p className={`font-bold ${isOnline ? 'text-green-600' : 'text-red-600'}`}>{statusText}</p>
+                                    <p className="text-gray-400">{statusSubtext}</p>
+                                </div>
+                            </div>
+
+                            {/* Machine Status Icon */}
+                            <div className="relative group cursor-help">
+                                <Cog size={20} className={`${isMachineRunning ? 'text-green-500' : 'text-gray-400'}`} />
+                                <div className={`w-2 h-2 ${isMachineRunning ? 'bg-green-500' : 'bg-gray-400'} rounded-full absolute -top-0.5 -right-0.5 ${isMachineRunning ? 'animate-pulse' : ''}`}></div>
+
+                                {/* Tooltip */}
+                                <div className="absolute left-full ml-4 bottom-0 px-3 py-2 bg-white border border-gray-100 text-gray-700 text-xs rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-20 shadow-xl">
+                                    <p className={`font-bold ${isMachineRunning ? 'text-green-600' : 'text-gray-500'}`}>Mesin Desalinasi</p>
+                                    <p className={isMachineRunning ? 'text-green-500' : 'text-gray-400'}>
+                                        {isMachineRunning ? 'Sedang Berjalan' : 'Tidak Aktif'}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

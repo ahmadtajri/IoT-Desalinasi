@@ -1,8 +1,8 @@
 {
     "info": {
         "_postman_id": "esp32-iot-data-logger-v20",
-        "name": "ESP32 IoT Desalinasi API v2.0",
-        "description": "API Collection untuk ESP32 IoT Data Logger - Monitoring dan logging data sensor desalinasi\n\nSensor Configuration:\n- Humidity: H1-H7 (7 sensors)\n- Temperature: T1-T15 (15 sensors)\n- Water Level: WL1 (1 sensor)\n- Total: 23 sensors",
+        "name": "ESP32 IoT Desalinasi API v2.1",
+        "description": "API Collection untuk ESP32 IoT Data Logger - Monitoring dan logging data sensor desalinasi\n\nSensor Configuration:\n- Humidity: RH1-RH7 (7 sensors)\n- Temperature: T1-T15 (15 sensors)\n- Water Level: WL1 (1 sensor)\n- Total: 23 sensors",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "item": [
@@ -41,7 +41,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"humidity\": \"all\",\n    \"temperature\": \"all\",\n    \"waterLevel\": \"all\"\n}"
+                            "raw": "{\n    \"humidity\": \"all\",\n    \"temperature\": \"all\"\n}"
                         },
                         "url": {
                             "raw": "{{api_url}}/logger/start",
@@ -53,7 +53,7 @@
                                 "start"
                             ]
                         },
-                        "description": "Menyalakan logger background di server.\n\nParameter sensor dapat berupa:\n- \"all\" - rekam semua sensor dalam tipe tersebut\n- \"none\" - jangan rekam tipe sensor ini\n- \"H1\", \"T5\", \"WL1\" - rekam sensor spesifik saja"
+                        "description": "Menyalakan logger background di server.\n\nParameter sensor dapat berupa:\n- \"all\" - rekam semua sensor dalam tipe tersebut\n- \"none\" - jangan rekam tipe sensor ini\n- \"RH1\", \"T5\" - rekam sensor spesifik saja"
                     },
                     "response": []
                 },
@@ -89,7 +89,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"interval\": 5000,\n    \"humidity\": \"all\",\n    \"temperature\": \"all\",\n    \"waterLevel\": \"all\"\n}"
+                            "raw": "{\n    \"interval\": 5000,\n    \"humidity\": \"all\",\n    \"temperature\": \"all\"\n}"
                         },
                         "url": {
                             "raw": "{{api_url}}/logger/config",
@@ -101,7 +101,7 @@
                                 "config"
                             ]
                         },
-                        "description": "Mengubah konfigurasi logger:\n- interval: Dalam milidetik (5000, 30000, 60000)\n- humidity: \"all\" / \"none\" / \"H1\" s/d \"H7\"\n- temperature: \"all\" / \"none\" / \"T1\" s/d \"T15\"\n- waterLevel: \"all\" / \"none\" / \"WL1\""
+                        "description": "Mengubah konfigurasi logger:\n- interval: Dalam milidetik (5000, 30000, 60000)\n- humidity: \"all\" / \"none\" / \"RH1\" s/d \"RH7\"\n- temperature: \"all\" / \"none\" / \"T1\" s/d \"T15\""
                     },
                     "response": []
                 }
@@ -181,7 +181,7 @@
                         "method": "GET",
                         "header": [],
                         "url": {
-                            "raw": "{{api_url}}/sensors?sensorId=H1",
+                            "raw": "{{api_url}}/sensors?sensorId=RH1",
                             "host": [
                                 "{{api_url}}"
                             ],
@@ -191,12 +191,12 @@
                             "query": [
                                 {
                                     "key": "sensorId",
-                                    "value": "H1",
-                                    "description": "Filter data berdasarkan sensor ID (H1-H7, T1-T15, WL1)"
+                                    "value": "RH1",
+                                    "description": "Filter data berdasarkan sensor ID (RH1-RH7, T1-T15, WL1)"
                                 }
                             ]
                         },
-                        "description": "Mendapatkan data dari sensor tertentu (H1-H7, T1-T15, WL1)"
+                        "description": "Mendapatkan data dari sensor tertentu (RH1-RH7, T1-T15, WL1)"
                     },
                     "response": []
                 },
@@ -280,7 +280,7 @@
                                     "let sensorId, unit, value;",
                                     "",
                                     "if (type === 'humidity') {",
-                                    "    sensorId = 'H' + (Math.floor(Math.random() * 7) + 1);",
+                                    "    sensorId = 'RH' + (Math.floor(Math.random() * 7) + 1);",
                                     "    value = (50 + Math.random() * 40).toFixed(1);",
                                     "    unit = '%';",
                                     "} else if (type === 'temperature') {",
@@ -353,17 +353,17 @@
                         "method": "DELETE",
                         "header": [],
                         "url": {
-                            "raw": "{{api_url}}/sensors/sensor/H1",
+                            "raw": "{{api_url}}/sensors/sensor/RH1",
                             "host": [
                                 "{{api_url}}"
                             ],
                             "path": [
                                 "sensors",
                                 "sensor",
-                                "H1"
+                                "RH1"
                             ]
                         },
-                        "description": "Menghapus semua data dari sensor tertentu (contoh: H1)."
+                        "description": "Menghapus semua data dari sensor tertentu (contoh: RH1)."
                     },
                     "response": []
                 },
@@ -469,7 +469,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"sensor_id\": \"H1\"\n}"
+                            "raw": "{\n  \"sensor_id\": \"RH1\"\n}"
                         },
                         "url": {
                             "raw": "{{api_url}}/sensors",

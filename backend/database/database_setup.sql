@@ -4,7 +4,8 @@
 -- Jalankan script ini di phpMyAdmin atau MySQL CLI
 -- untuk membuat database dan tabel secara otomatis
 -- ================================================
--- UPDATED: Support individual sensors (H1-H7, T1-T15, WL1)
+-- UPDATED: Support individual sensors (RH1-RH7, T1-T15)
+-- NOTE: WL1 (Water Level) is realtime only, not saved to database
 -- ================================================
 
 -- 1. Buat Database
@@ -21,8 +22,8 @@ USE iot_desalinasi;
 -- 4. Buat Tabel sensor_data (STRUKTUR BARU)
 CREATE TABLE IF NOT EXISTS `sensor_data` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `sensor_id` varchar(10) NOT NULL COMMENT 'Sensor ID (H1-H7, T1-T15, WL1)',
-  `sensor_type` enum('humidity','temperature','waterLevel') NOT NULL COMMENT 'Tipe Sensor',
+  `sensor_id` varchar(10) NOT NULL COMMENT 'Sensor ID (RH1-RH7, T1-T15)',
+  `sensor_type` enum('humidity','temperature') NOT NULL COMMENT 'Tipe Sensor (humidity, temperature)',
   `value` float NOT NULL COMMENT 'Nilai Pembacaan Sensor',
   `unit` varchar(10) NOT NULL DEFAULT '%' COMMENT 'Satuan (%, °C)',
   `status` enum('active','inactive') NOT NULL DEFAULT 'active' COMMENT 'Status Sensor',
@@ -38,20 +39,20 @@ CREATE TABLE IF NOT EXISTS `sensor_data` (
 -- 5. Insert Data Dummy untuk Testing (Opsional)
 
 -- ========================================
--- HUMIDITY SENSORS (H1-H7)
+-- HUMIDITY SENSORS (RH1-RH7)
 -- ========================================
 INSERT INTO `sensor_data` 
   (`sensor_id`, `sensor_type`, `value`, `unit`, `status`, `interval`, `timestamp`) 
 VALUES
-  ('H1', 'humidity', 65.2, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
-  ('H1', 'humidity', 65.5, '%', 'active', 5, NOW() - INTERVAL 25 MINUTE),
-  ('H2', 'humidity', 63.8, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
-  ('H2', 'humidity', 64.2, '%', 'active', 5, NOW() - INTERVAL 25 MINUTE),
-  ('H3', 'humidity', 66.5, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
-  ('H4', 'humidity', 64.1, '%', 'active', 30, NOW() - INTERVAL 20 MINUTE),
-  ('H5', 'humidity', 65.9, '%', 'active', 30, NOW() - INTERVAL 20 MINUTE),
-  ('H6', 'humidity', 62.7, '%', 'active', 60, NOW() - INTERVAL 15 MINUTE),
-  ('H7', 'humidity', 67.3, '%', 'active', 60, NOW() - INTERVAL 15 MINUTE);
+  ('RH1', 'humidity', 65.2, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
+  ('RH1', 'humidity', 65.5, '%', 'active', 5, NOW() - INTERVAL 25 MINUTE),
+  ('RH2', 'humidity', 63.8, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
+  ('RH2', 'humidity', 64.2, '%', 'active', 5, NOW() - INTERVAL 25 MINUTE),
+  ('RH3', 'humidity', 66.5, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
+  ('RH4', 'humidity', 64.1, '%', 'active', 30, NOW() - INTERVAL 20 MINUTE),
+  ('RH5', 'humidity', 65.9, '%', 'active', 30, NOW() - INTERVAL 20 MINUTE),
+  ('RH6', 'humidity', 62.7, '%', 'active', 60, NOW() - INTERVAL 15 MINUTE),
+  ('RH7', 'humidity', 67.3, '%', 'active', 60, NOW() - INTERVAL 15 MINUTE);
 
 -- ========================================
 -- TEMPERATURE SENSORS (T1-T15)
@@ -77,16 +78,11 @@ VALUES
   ('T15', 'temperature', 65.3, '°C', 'active', 60, NOW() - INTERVAL 5 MINUTE);
 
 -- ========================================
--- WATER LEVEL SENSOR (WL1)
+-- NOTE: WATER LEVEL SENSOR (WL1)
+-- Water level is REALTIME ONLY - not saved to database
+-- Data is only available in ESP32 cache for live display
 -- ========================================
-INSERT INTO `sensor_data` 
-  (`sensor_id`, `sensor_type`, `value`, `unit`, `status`, `interval`, `timestamp`) 
-VALUES
-  ('WL1', 'waterLevel', 75.5, '%', 'active', 5, NOW() - INTERVAL 30 MINUTE),
-  ('WL1', 'waterLevel', 76.2, '%', 'active', 5, NOW() - INTERVAL 25 MINUTE),
-  ('WL1', 'waterLevel', 74.8, '%', 'active', 5, NOW() - INTERVAL 20 MINUTE),
-  ('WL1', 'waterLevel', 77.1, '%', 'active', 30, NOW() - INTERVAL 15 MINUTE),
-  ('WL1', 'waterLevel', 78.5, '%', 'active', 60, NOW() - INTERVAL 10 MINUTE);
+
 
 -- 6. Verifikasi Data
 SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 20;
@@ -128,7 +124,7 @@ ORDER BY sensor_type, sensor_id;
 -- DELETE FROM sensor_data WHERE sensor_type = 'humidity';
 
 -- Hapus data sensor tertentu
--- DELETE FROM sensor_data WHERE sensor_id = 'H1';
+-- DELETE FROM sensor_data WHERE sensor_id = 'RH1';
 
 -- Hapus semua data (HATI-HATI!)
 -- TRUNCATE TABLE sensor_data;

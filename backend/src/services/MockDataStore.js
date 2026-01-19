@@ -1,6 +1,6 @@
 // Mock Data Store - In-Memory Database Replacement
 // This replaces MySQL database with in-memory data storage
-// Updated to support new sensor structure (H1-H7, T1-T15, WL1)
+// Updated to support new sensor structure (RH1-RH7, T1-T15, WL1)
 
 class MockDataStore {
     constructor() {
@@ -13,9 +13,8 @@ class MockDataStore {
     initializeSampleData() {
         console.log('📦 Initializing mock data store with new sensor structure...');
 
-        const humiditySensors = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7'];
+        const humiditySensors = ['RH1', 'RH2', 'RH3', 'RH4', 'RH5', 'RH6', 'RH7'];
         const temperatureSensors = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15'];
-        const waterLevelSensors = ['WL1'];
         const intervals = [5, 30, 60];
 
         // Generate sample records for each sensor type
@@ -48,20 +47,6 @@ class MockDataStore {
                 interval: interval,
                 timestamp: timestamp
             });
-
-            // Add some water level data (less frequent)
-            if (i % 3 === 0) {
-                this.data.push({
-                    id: this.currentId++,
-                    sensor_id: 'WL1',
-                    sensor_type: 'waterLevel',
-                    value: parseFloat((10 + Math.random() * 90).toFixed(1)),
-                    unit: '%',
-                    status: 'active',
-                    interval: interval,
-                    timestamp: timestamp
-                });
-            }
         }
 
         // Sort by timestamp descending (newest first)

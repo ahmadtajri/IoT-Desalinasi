@@ -12,7 +12,7 @@ function App() {
     return (
         <LoggerProvider>
             <Router>
-                <div className="flex h-screen bg-gray-100 overflow-hidden">
+                <div className="flex h-screen w-screen bg-gray-100 overflow-hidden">
                     {/* Sidebar */}
                     <Sidebar
                         isMobileOpen={isMobileSidebarOpen}
@@ -20,7 +20,7 @@ function App() {
                     />
 
                     {/* Main Content Area */}
-                    <div className="flex-1 h-full flex flex-col overflow-hidden">
+                    <div className="flex-1 h-full flex flex-col min-w-0 overflow-hidden">
                         {/* Mobile Header */}
                         <div className="md:hidden bg-white p-4 border-b border-gray-200 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3">
@@ -35,12 +35,12 @@ function App() {
                         </div>
 
                         {/* Scrollable Content */}
-                        <div className="flex-1 overflow-y-auto bg-gray-50">
+                        <main className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50">
                             <Routes>
                                 <Route path="/" element={<Dashboard />} />
                                 <Route path="/report" element={<Report />} />
                             </Routes>
-                        </div>
+                        </main>
                     </div>
                 </div>
             </Router>

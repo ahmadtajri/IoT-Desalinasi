@@ -10,12 +10,12 @@ const SensorData = sequelize.define('SensorData', {
     sensor_id: {
         type: DataTypes.STRING(10),
         allowNull: false,
-        comment: 'Sensor ID (H1-H7, T1-T15, WL1)'
+        comment: 'Sensor ID (RH1-RH7, T1-T15) - Note: WL1 is realtime only, not logged'
     },
     sensor_type: {
-        type: DataTypes.ENUM('humidity', 'temperature', 'waterLevel'),
+        type: DataTypes.ENUM('humidity', 'temperature'),
         allowNull: false,
-        comment: 'Type of sensor'
+        comment: 'Type of sensor (humidity, temperature) - Note: waterLevel is realtime only'
     },
     value: {
         type: DataTypes.FLOAT,

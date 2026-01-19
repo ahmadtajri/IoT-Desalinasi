@@ -51,18 +51,22 @@ const sensorService = {
         return response.data;
     },
 
+    async getRealtimeData() {
+        const response = await api.get('/sensors/realtime');
+        return response.data;
+    },
+
     // Backend Logger Control
     async getLoggerStatus() {
         const response = await api.get('/logger/status');
         return response.data;
     },
 
-    // sensorConfig format: { humidity: 'all'|'none'|'H1', temperature: 'all'|'none'|'T5', waterLevel: 'all'|'none'|'WL1' }
+    // sensorConfig format: { humidity: 'all'|'none'|'RH1', temperature: 'all'|'none'|'T5' }
     async startLogger(sensorConfig = {}) {
         const response = await api.post('/logger/start', {
             humidity: sensorConfig.humidity || 'all',
-            temperature: sensorConfig.temperature || 'all',
-            waterLevel: sensorConfig.waterLevel || 'all'
+            temperature: sensorConfig.temperature || 'all'
         });
         return response.data;
     },
@@ -77,7 +81,6 @@ const sensorService = {
         if (sensorConfig) {
             config.humidity = sensorConfig.humidity;
             config.temperature = sensorConfig.temperature;
-            config.waterLevel = sensorConfig.waterLevel;
         }
         const response = await api.post('/logger/config', config);
         return response.data;

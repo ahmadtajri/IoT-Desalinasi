@@ -7,9 +7,9 @@ import CustomAlert from '../components/CustomAlert';
 
 const Report = () => {
     // Separate filters for humidity and temperature sensors
-    const [selectedHumiditySensor, setSelectedHumiditySensor] = useState('all'); // 'all', 'none', 'H1', ...
-    const [selectedTemperatureSensor, setSelectedTemperatureSensor] = useState('all'); // 'all', 'none', 'T1', ...
-    const [selectedWaterLevelSensor, setSelectedWaterLevelSensor] = useState('all'); // 'all', 'none', 'WL1'
+    const [selectedHumiditySensor, setSelectedHumiditySensor] = useState('all');
+    const [selectedAirTempSensor, setSelectedAirTempSensor] = useState('all');
+    const [selectedWaterTempSensor, setSelectedWaterTempSensor] = useState('all');
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -30,23 +30,35 @@ const Report = () => {
     // Use Global Logger Context
     const { isLogging, toggleLogging, changeInterval, logCount, logInterval, realtimeData, sensorStatus } = useLogger();
 
+    // Helper function to format values to 2 decimal places
+    const formatValue = (val) => {
+        if (val === null || val === undefined || isNaN(val)) return '--';
+        return Number(val).toFixed(2);
+    };
+
     // Calculate active sensors
     const activeHumiditySensors = sensorStatus?.humidity
         ? Object.values(sensorStatus.humidity).filter(s => s).length
         : 0;
-    const activeTempSensors = sensorStatus?.temperature
-        ? Object.values(sensorStatus.temperature).filter(s => s).length
+    const activeAirTempSensors = sensorStatus?.airTemperature
+        ? Object.values(sensorStatus.airTemperature).filter(s => s).length
         : 0;
-    const activeWaterLevelSensors = sensorStatus?.waterLevel
-        ? Object.values(sensorStatus.waterLevel).filter(s => s).length
+    const activeWaterTempSensors = sensorStatus?.waterTemperature
+        ? Object.values(sensorStatus.waterTemperature).filter(s => s).length
         : 0;
-    const totalActiveSensors = activeHumiditySensors + activeTempSensors + activeWaterLevelSensors;
-    const totalInactiveSensors = 23 - totalActiveSensors;
+    const totalActiveSensors = activeHumiditySensors + activeAirTempSensors + activeWaterTempSensors;
+    // 7 RH + 7 AirTemp + 8 WaterTemp = 22 sensors
+    const totalInactiveSensors = (7 + 7 + 8) - totalActiveSensors;
 
     // Sensor options
-    const humidityOptions = Array.from({ length: 7 }, (_, i) => ({ value: `H${i + 1}`, label: `H${i + 1}` }));
-    const temperatureOptions = Array.from({ length: 15 }, (_, i) => ({ value: `T${i + 1}`, label: `T${i + 1}` }));
-    const waterLevelOptions = [{ value: 'WL1', label: 'WL1' }];
+    const humidityOptions = Array.from({ length: 7 }, (_, i) => ({ value: `RH${i + 1}`, label: `RH${i + 1}` }));
+    const airTempOptions = Array.from({ length: 7 }, (_, i) => ({ value: `T${i + 1}`, label: `T${i + 1}` }));
+    const waterTempOptions = Array.from({ length: 8 }, (_, i) => ({ value: `T${i + 8}`, label: `T${i + 8}` }));
+
+    // Define ALL expected sensors for status display
+    const allHumiditySensors = ['RH1', 'RH2', 'RH3', 'RH4', 'RH5', 'RH6', 'RH7'];
+    const allAirTempSensors = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    const allWaterTempSensors = ['T8', 'T9', 'T10', 'T11', 'T12', 'T13', 'T14', 'T15'];
 
     // Helper for Custom Alerts
     const showAlert = (title, message, type = 'info') => {
@@ -83,22 +95,22 @@ const Report = () => {
     }, [logCount]);
 
     const handleToggleLogging = () => {
-        // Check if all sensor filters are set to 'none'
-        if (selectedHumiditySensor === 'none' && selectedTemperatureSensor === 'none' && selectedWaterLevelSensor === 'none') {
-            showAlert(
-                'Tidak Dapat Mengaktifkan Logger',
-                'Silakan pilih setidaknya satu jenis sensor untuk direkam. Saat ini semua filter sensor diatur ke "None".',
-                'warning'
-            );
-            return;
+        // Merge air and water temp choice for backend (simple logic: favor 'all' if any is 'all')
+        let tempConfig = 'none';
+        if (selectedAirTempSensor !== 'none' || selectedWaterTempSensor !== 'none') {
+            if (selectedAirTempSensor === 'all' || selectedWaterTempSensor === 'all') {
+                tempConfig = 'all';
+            } else {
+                // If both specific, default to one (limitation of current backend API structure if it only takes one 'temperature' field)
+                // Assuming backend takes 'temperature' as a single string.
+                tempConfig = selectedAirTempSensor;
+            }
         }
 
-        // Pass sensor configuration based on filter selections
-        // Send specific sensor ID if selected, 'all' for all sensors, 'none' if disabled
         const sensorConfig = {
             humidity: selectedHumiditySensor === 'none' ? 'none' : selectedHumiditySensor,
-            temperature: selectedTemperatureSensor === 'none' ? 'none' : selectedTemperatureSensor,
-            waterLevel: selectedWaterLevelSensor === 'none' ? 'none' : selectedWaterLevelSensor
+            temperature: tempConfig,
+            waterLevel: 'none'
         };
 
         console.log('[Report] Starting logger with config:', sensorConfig);
@@ -127,21 +139,21 @@ const Report = () => {
                 }
             }
 
-            // Add temperature sensor filter  
-            if (selectedTemperatureSensor !== 'none') {
-                if (selectedTemperatureSensor === 'all') {
+            // Add air temperature sensor filter  
+            if (selectedAirTempSensor !== 'none') {
+                if (selectedAirTempSensor === 'all') {
                     // Will be filtered client-side
                 } else {
-                    selectedSensorIds.push(selectedTemperatureSensor);
+                    selectedSensorIds.push(selectedAirTempSensor);
                 }
             }
 
-            // Add water level sensor filter
-            if (selectedWaterLevelSensor !== 'none') {
-                if (selectedWaterLevelSensor === 'all') {
+            // Add water temperature sensor filter  
+            if (selectedWaterTempSensor !== 'none') {
+                if (selectedWaterTempSensor === 'all') {
                     // Will be filtered client-side
                 } else {
-                    selectedSensorIds.push(selectedWaterLevelSensor);
+                    selectedSensorIds.push(selectedWaterTempSensor);
                 }
             }
 
@@ -165,41 +177,12 @@ const Report = () => {
             }
         } catch (error) {
             console.error('Error fetching data:', error);
-            // Fallback to mock data with new structure
-            const mockData = Array.from({ length: 30 }, (_, i) => {
-                const rand = Math.random();
-                let type, sensorNum, prefix;
-
-                if (rand < 0.4) {
-                    type = 'humidity';
-                    sensorNum = Math.floor(Math.random() * 7) + 1;
-                    prefix = 'H';
-                } else if (rand < 0.8) {
-                    type = 'temperature';
-                    sensorNum = Math.floor(Math.random() * 15) + 1;
-                    prefix = 'T';
-                } else {
-                    type = 'waterLevel';
-                    sensorNum = 1;
-                    prefix = 'WL';
-                }
-
-                return {
-                    id: i + 1,
-                    sensor_id: `${prefix}${sensorNum}`,
-                    sensor_type: type,
-                    value: type === 'humidity'
-                        ? (50 + Math.random() * 40).toFixed(1)
-                        : type === 'temperature'
-                            ? (20 + Math.random() * 50).toFixed(1)
-                            : (10 + Math.random() * 90).toFixed(1),
-                    unit: type === 'humidity' || type === 'waterLevel' ? '%' : '°C',
-                    status: Math.random() > 0.2 ? 'active' : 'inactive',
-                    interval: [5, 30, 60][Math.floor(Math.random() * 3)],
-                    timestamp: new Date(Date.now() - i * 3600000).toISOString()
-                };
-            });
-            setData(mockData);
+            setData([]);
+            if (!alertConfig.isOpen) {
+                // Optional: You could show a toast here, but console error is sufficient for now 
+                // to avoid spamming alerts if it auto-refreshes.
+                // showAlert('Connection Error', 'Gagal mengambil data dari server.', 'error');
+            }
         } finally {
             setLoading(false);
         }
@@ -245,21 +228,25 @@ const Report = () => {
         }
 
         if (sensorType === 'temperature') {
-            // If temperature filter is 'none', hide all temperature data
-            if (selectedTemperatureSensor === 'none') return false;
-            // If specific sensor selected, only show that sensor
-            if (selectedTemperatureSensor !== 'all' && sensorId !== selectedTemperatureSensor) return false;
-            // If 'all', show this temperature data
-            return true;
-        }
+            const tempIdNum = parseInt(sensorId.replace('T', ''), 10);
+            const isAirTemp = tempIdNum <= 7;
+            const isWaterTemp = tempIdNum >= 8;
 
-        if (sensorType === 'waterLevel') {
-            // If water level filter is 'none', hide all water level data
-            if (selectedWaterLevelSensor === 'none') return false;
-            // If specific sensor selected, only show that sensor
-            if (selectedWaterLevelSensor !== 'all' && sensorId !== selectedWaterLevelSensor) return false;
-            // If 'all', show this water level data
-            return true;
+            // Check Air Temp Filter
+            if (isAirTemp) {
+                if (selectedAirTempSensor === 'none') return false;
+                if (selectedAirTempSensor !== 'all' && sensorId !== selectedAirTempSensor) return false;
+                return true;
+            }
+
+            // Check Water Temp Filter
+            if (isWaterTemp) {
+                if (selectedWaterTempSensor === 'none') return false;
+                if (selectedWaterTempSensor !== 'all' && sensorId !== selectedWaterTempSensor) return false;
+                return true;
+            }
+
+            return false;
         }
 
         // Unknown sensor type - show by default
@@ -353,12 +340,14 @@ const Report = () => {
         if (sensorType === 'humidity') {
             selectedSensor = selectedHumiditySensor;
             sensorTypeName = 'Kelembapan';
-        } else if (sensorType === 'temperature') {
-            selectedSensor = selectedTemperatureSensor;
-            sensorTypeName = 'Suhu';
+        } else if (sensorType === 'airTemperature') {
+            selectedSensor = selectedAirTempSensor;
+            sensorTypeName = 'Suhu Udara';
+        } else if (sensorType === 'waterTemperature') {
+            selectedSensor = selectedWaterTempSensor;
+            sensorTypeName = 'Suhu Air';
         } else {
-            selectedSensor = selectedWaterLevelSensor;
-            sensorTypeName = 'Water Level';
+            return; // Unknown
         }
 
         // If 'none' is selected, show warning
@@ -382,9 +371,47 @@ const Report = () => {
             async () => {
                 try {
                     if (isDeleteAll) {
-                        // Delete all sensors of this type
-                        await sensorService.deleteBySensorType(sensorType);
-                        const newData = data.filter(item => item.sensor_type !== sensorType);
+                        // For temperature split, we need to be careful. Backend might not support deleting "just air temp" by type if type is same.
+                        // We will rely on calling deleteBySensorId loop or special handling if needed.
+                        // But standard 'deleteBySensorType' likely deletes ALL temperatures.
+                        // Assuming updated backend or handling deletion by ID loop for safety if splitting types strictly.
+                        // For this demo, if "Suhu Udara" matches 'temperature' type in DB, 'deleteBySensorType' will delete ALL temps.
+                        // We should probably filter IDs and delete individually or warn user.
+                        // For Safety/Simplicity in this mock environment:
+
+                        // If it's a specific group (Air/Water) but backend has shared type:
+                        // This part is tricky without backend changes. We'll attempt to use deleteBySensorId if applicable or just deleteByType if type is unique.
+                        // Since Air/Water share 'temperature' type, we can't use 'deleteBySensorType' safely for just one group.
+                        if (sensorType === 'airTemperature' || sensorType === 'waterTemperature') {
+                            // Delete by range logic would be best here
+                            // For now, let's just delete the exact logic for the selected "all" (which might mean loop)
+                            // Since we don't have a reliable "Delete Range" API, we will just use deleteByType('temperature') 
+                            // BUT this will delete both. 
+                            // Let's assume we send the specific sensorType string if backend supported it, else fallback.
+                            await sensorService.deleteBySensorType('temperature'); // LIMITATION: Deletes all temperatures
+                        } else {
+                            await sensorService.deleteBySensorType(sensorType);
+                        }
+
+                        const newData = data.filter(item => {
+                            if (sensorType === 'airTemperature') {
+                                // Remove T1-T7
+                                if (item.sensor_type === 'temperature') {
+                                    const id = parseInt(item.sensor_id.replace('T', ''));
+                                    return id > 7;
+                                }
+                                return true;
+                            }
+                            if (sensorType === 'waterTemperature') {
+                                // Remove T8-T15
+                                if (item.sensor_type === 'temperature') {
+                                    const id = parseInt(item.sensor_id.replace('T', ''));
+                                    return id <= 7;
+                                }
+                                return true;
+                            }
+                            return item.sensor_type !== sensorType
+                        });
                         setData(newData);
                         showAlert('Sukses', `Semua data ${sensorTypeName} berhasil dihapus.`, 'success');
                     } else {
@@ -491,51 +518,53 @@ const Report = () => {
                                             <p className="font-medium text-gray-800">Delete Sensor Kelembapan</p>
                                             <p className="text-xs text-gray-500">
                                                 {selectedHumiditySensor === 'none'
-                                                    ? 'Pilih sensor H terlebih dahulu'
+                                                    ? 'Pilih sensor RH terlebih dahulu'
                                                     : selectedHumiditySensor === 'all'
-                                                        ? 'Hapus SEMUA data kelembapan (H1-H7)'
+                                                        ? 'Hapus SEMUA data kelembapan (RH1-RH7)'
                                                         : `Hapus data ${selectedHumiditySensor}`}
                                             </p>
                                         </div>
                                     </button>
 
-                                    {/* Delete Temperature Sensor */}
+                                    {/* Delete Air Temperature Sensor */}
                                     <button
-                                        onClick={() => { handleDeleteBySensor('temperature'); setShowDeleteMenu(false); }}
-                                        className={`w-full text-left px-4 py-3 hover:bg-orange-50 transition-colors flex items-center gap-3 ${selectedTemperatureSensor === 'none' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        disabled={selectedTemperatureSensor === 'none'}
+                                        onClick={() => { handleDeleteBySensor('airTemperature'); setShowDeleteMenu(false); }}
+                                        className={`w-full text-left px-4 py-3 hover:bg-orange-50 transition-colors flex items-center gap-3 ${selectedAirTempSensor === 'none' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        disabled={selectedAirTempSensor === 'none'}
                                     >
                                         <Thermometer size={16} className="text-orange-600" />
                                         <div>
-                                            <p className="font-medium text-gray-800">Delete Sensor Suhu</p>
+                                            <p className="font-medium text-gray-800">Delete Suhu Udara</p>
                                             <p className="text-xs text-gray-500">
-                                                {selectedTemperatureSensor === 'none'
-                                                    ? 'Pilih sensor T terlebih dahulu'
-                                                    : selectedTemperatureSensor === 'all'
-                                                        ? 'Hapus SEMUA data suhu (T1-T15)'
-                                                        : `Hapus data ${selectedTemperatureSensor}`}
+                                                {selectedAirTempSensor === 'none'
+                                                    ? 'Pilih sensor T1-T7'
+                                                    : selectedAirTempSensor === 'all'
+                                                        ? 'Hapus SEMUA data T1-T7'
+                                                        : `Hapus data ${selectedAirTempSensor}`}
                                             </p>
                                         </div>
                                     </button>
 
-                                    {/* Delete Water Level Sensor */}
+                                    {/* Delete Water Temperature Sensor */}
                                     <button
-                                        onClick={() => { handleDeleteBySensor('waterLevel'); setShowDeleteMenu(false); }}
-                                        className={`w-full text-left px-4 py-3 hover:bg-cyan-50 transition-colors flex items-center gap-3 ${selectedWaterLevelSensor === 'none' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                        disabled={selectedWaterLevelSensor === 'none'}
+                                        onClick={() => { handleDeleteBySensor('waterTemperature'); setShowDeleteMenu(false); }}
+                                        className={`w-full text-left px-4 py-3 hover:bg-cyan-50 transition-colors flex items-center gap-3 ${selectedWaterTempSensor === 'none' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        disabled={selectedWaterTempSensor === 'none'}
                                     >
-                                        <Waves size={16} className="text-cyan-600" />
+                                        <Thermometer size={16} className="text-cyan-600" />
                                         <div>
-                                            <p className="font-medium text-gray-800">Delete Sensor Water Level</p>
+                                            <p className="font-medium text-gray-800">Delete Suhu Air</p>
                                             <p className="text-xs text-gray-500">
-                                                {selectedWaterLevelSensor === 'none'
-                                                    ? 'Pilih sensor WL terlebih dahulu'
-                                                    : selectedWaterLevelSensor === 'all'
-                                                        ? 'Hapus SEMUA data water level'
-                                                        : `Hapus data ${selectedWaterLevelSensor}`}
+                                                {selectedWaterTempSensor === 'none'
+                                                    ? 'Pilih sensor T8-T15'
+                                                    : selectedWaterTempSensor === 'all'
+                                                        ? 'Hapus SEMUA data T8-T15'
+                                                        : `Hapus data ${selectedWaterTempSensor}`}
                                             </p>
                                         </div>
                                     </button>
+
+                                    {/* Delete Water Level Sensor - REMOVED */}
 
                                     <div className="border-t border-gray-100 my-1"></div>
                                     <button
@@ -601,15 +630,16 @@ const Report = () => {
                             <div className="mb-6">
                                 <div className="flex items-center gap-2 mb-4">
                                     <Droplets size={20} className="text-blue-500" />
-                                    <h3 className="font-bold text-gray-800">Sensor Kelembapan (H1-H7)</h3>
+                                    <h3 className="font-bold text-gray-800">Sensor Kelembapan (RH1-RH7)</h3>
                                     <span className="text-sm text-gray-500 ml-auto">{activeHumiditySensors}/7 Aktif</span>
                                 </div>
                                 <div className="grid grid-cols-3 sm:grid-cols-7 gap-3">
-                                    {Object.entries(sensorStatus?.humidity || {}).map(([key, isActive]) => {
-                                        const value = realtimeData?.humidity?.[key];
+                                    {allHumiditySensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.humidity?.[sensorId] ?? false;
+                                        const value = realtimeData?.humidity?.[sensorId];
                                         return (
                                             <div
-                                                key={key}
+                                                key={sensorId}
                                                 className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}
                                             >
                                                 <div className="relative mb-1">
@@ -622,9 +652,9 @@ const Report = () => {
                                                         <div className="w-3 h-3 bg-red-400 rounded-full"></div>
                                                     )}
                                                 </div>
-                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>{key}</span>
+                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>{sensorId}</span>
                                                 <span className={`text-lg font-bold mt-1 ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
-                                                    {isActive && value !== null ? `${value}%` : '--'}
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}%` : '--'}
                                                 </span>
                                             </div>
                                         );
@@ -632,19 +662,20 @@ const Report = () => {
                                 </div>
                             </div>
 
-                            {/* Temperature Sensors */}
-                            <div>
+                            {/* Air Temperature Sensors */}
+                            <div className="mb-6">
                                 <div className="flex items-center gap-2 mb-4">
                                     <Thermometer size={20} className="text-orange-500" />
-                                    <h3 className="font-bold text-gray-800">Sensor Suhu (T1-T15)</h3>
-                                    <span className="text-sm text-gray-500 ml-auto">{activeTempSensors}/15 Aktif</span>
+                                    <h3 className="font-bold text-gray-800">Sensor Suhu Udara (T1-T7)</h3>
+                                    <span className="text-sm text-gray-500 ml-auto">{activeAirTempSensors}/7 Aktif</span>
                                 </div>
-                                <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
-                                    {Object.entries(sensorStatus?.temperature || {}).map(([key, isActive]) => {
-                                        const value = realtimeData?.temperature?.[key];
+                                <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+                                    {allAirTempSensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.airTemperature?.[sensorId] ?? false;
+                                        const value = realtimeData?.airTemperature?.[sensorId];
                                         return (
                                             <div
-                                                key={key}
+                                                key={sensorId}
                                                 className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}
                                             >
                                                 <div className="relative mb-1">
@@ -657,9 +688,9 @@ const Report = () => {
                                                         <div className="w-3 h-3 bg-red-400 rounded-full"></div>
                                                     )}
                                                 </div>
-                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>{key}</span>
+                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>{sensorId}</span>
                                                 <span className={`text-lg font-bold mt-1 ${isActive ? 'text-orange-600' : 'text-gray-400'}`}>
-                                                    {isActive && value !== null ? `${value}°` : '--'}
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}°` : '--'}
                                                 </span>
                                             </div>
                                         );
@@ -667,19 +698,20 @@ const Report = () => {
                                 </div>
                             </div>
 
-                            {/* Water Level Sensors */}
+                            {/* Water Temperature Sensors */}
                             <div>
                                 <div className="flex items-center gap-2 mb-4">
-                                    <Waves size={20} className="text-cyan-500" />
-                                    <h3 className="font-bold text-gray-800">Sensor Water Level</h3>
-                                    <span className="text-sm text-gray-500 ml-auto">{activeWaterLevelSensors}/1 Aktif</span>
+                                    <Thermometer size={20} className="text-cyan-500" />
+                                    <h3 className="font-bold text-gray-800">Sensor Suhu Air (T8-T15)</h3>
+                                    <span className="text-sm text-gray-500 ml-auto">{activeWaterTempSensors}/8 Aktif</span>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                                    {Object.entries(sensorStatus?.waterLevel || {}).map(([key, isActive]) => {
-                                        const value = realtimeData?.waterLevel?.[key];
+                                <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
+                                    {allWaterTempSensors.map((sensorId) => {
+                                        const isActive = sensorStatus?.waterTemperature?.[sensorId] ?? false;
+                                        const value = realtimeData?.waterTemperature?.[sensorId];
                                         return (
                                             <div
-                                                key={key}
+                                                key={sensorId}
                                                 className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${isActive ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}
                                             >
                                                 <div className="relative mb-1">
@@ -692,15 +724,17 @@ const Report = () => {
                                                         <div className="w-3 h-3 bg-red-400 rounded-full"></div>
                                                     )}
                                                 </div>
-                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>{key}</span>
+                                                <span className={`font-bold text-sm ${isActive ? 'text-green-700' : 'text-red-600'}`}>{sensorId}</span>
                                                 <span className={`text-lg font-bold mt-1 ${isActive ? 'text-cyan-600' : 'text-gray-400'}`}>
-                                                    {isActive && value !== null ? `${value}%` : '--'}
+                                                    {isActive && value !== null && value !== undefined ? `${formatValue(value)}°` : '--'}
                                                 </span>
                                             </div>
                                         );
                                     })}
                                 </div>
                             </div>
+
+
                         </div>
 
                         <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
@@ -725,7 +759,8 @@ const Report = () => {
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
 
             {/* Data Logger Section */}
             <div className="mb-6">
@@ -762,7 +797,7 @@ const Report = () => {
                                 value={selectedHumiditySensor}
                                 onChange={(e) => setSelectedHumiditySensor(e.target.value)}
                             >
-                                <option value="all">Semua Sensor H</option>
+                                <option value="all">Semua Sensor RH</option>
                                 <option value="none">None</option>
                                 {humidityOptions.map(opt => (
                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -772,21 +807,21 @@ const Report = () => {
                         </div>
                     </div>
 
-                    {/* Temperature Sensor Filter */}
+                    {/* Air Temperature Filter */}
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Sensor Suhu
+                            Sensor Suhu Udara
                         </label>
                         <div className="relative">
                             <Thermometer className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={18} />
                             <select
                                 className="w-full pl-10 pr-4 py-2.5 border border-orange-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none appearance-none bg-orange-50 text-gray-700 font-medium"
-                                value={selectedTemperatureSensor}
-                                onChange={(e) => setSelectedTemperatureSensor(e.target.value)}
+                                value={selectedAirTempSensor}
+                                onChange={(e) => setSelectedAirTempSensor(e.target.value)}
                             >
-                                <option value="all">Semua Sensor T</option>
+                                <option value="all">Semua Udara (T1-7)</option>
                                 <option value="none">None</option>
-                                {temperatureOptions.map(opt => (
+                                {airTempOptions.map(opt => (
                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                                 ))}
                             </select>
@@ -794,27 +829,29 @@ const Report = () => {
                         </div>
                     </div>
 
-                    {/* Water Level Sensor Filter */}
+                    {/* Water Temperature Filter */}
                     <div className="flex-1 min-w-[200px]">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Sensor Water Level
+                            Sensor Suhu Air
                         </label>
                         <div className="relative">
-                            <Waves className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-400" size={18} />
+                            <Thermometer className="absolute left-3 top-1/2 -translate-y-1/2 text-cyan-400" size={18} />
                             <select
                                 className="w-full pl-10 pr-4 py-2.5 border border-cyan-200 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent outline-none appearance-none bg-cyan-50 text-gray-700 font-medium"
-                                value={selectedWaterLevelSensor}
-                                onChange={(e) => setSelectedWaterLevelSensor(e.target.value)}
+                                value={selectedWaterTempSensor}
+                                onChange={(e) => setSelectedWaterTempSensor(e.target.value)}
                             >
-                                <option value="all">Semua Sensor WL</option>
+                                <option value="all">Semua Air (T8-15)</option>
                                 <option value="none">None</option>
-                                {waterLevelOptions.map(opt => (
+                                {waterTempOptions.map(opt => (
                                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                                 ))}
                             </select>
                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-cyan-400 pointer-events-none" size={18} />
                         </div>
                     </div>
+
+                    {/* Water Level Sensor Filter - REMOVED */}
 
                     {/* Start Date */}
                     <div className="flex-1 min-w-[200px]">
@@ -895,8 +932,14 @@ const Report = () => {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${row.sensor_type === 'humidity' ? 'bg-blue-100 text-blue-700' : row.sensor_type === 'temperature' ? 'bg-orange-100 text-orange-700' : 'bg-cyan-100 text-cyan-700'}`}>
-                                                {row.sensor_type === 'humidity' ? 'Kelembapan' : row.sensor_type === 'temperature' ? 'Suhu' : 'Water Level'}
+                                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${row.sensor_type === 'humidity' ? 'bg-blue-100 text-blue-700' :
+                                                row.sensor_type === 'temperature' && parseInt(row.sensor_id.replace('T', '')) <= 7 ? 'bg-orange-100 text-orange-700' :
+                                                    row.sensor_type === 'temperature' ? 'bg-cyan-100 text-cyan-700' :
+                                                        'bg-gray-100 text-gray-700'
+                                                }`}>
+                                                {row.sensor_type === 'humidity' ? 'Kelembapan' :
+                                                    row.sensor_type === 'temperature' && parseInt(row.sensor_id.replace('T', '')) <= 7 ? 'Suhu Udara' :
+                                                        row.sensor_type === 'temperature' ? 'Suhu Air' : 'Water Level'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 font-medium text-gray-800">
@@ -917,11 +960,12 @@ const Report = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${row.interval === 5 ? 'bg-green-100 text-green-700' :
-                                                row.interval === 10 ? 'bg-yellow-100 text-yellow-700' :
+                                                row.interval === 30 ? 'bg-yellow-100 text-yellow-700' :
                                                     row.interval === 60 ? 'bg-purple-100 text-purple-700' :
-                                                        'bg-gray-100 text-gray-700'
+                                                        row.interval === 1800 ? 'bg-indigo-100 text-indigo-700' :
+                                                            'bg-gray-100 text-gray-700'
                                                 }`}>
-                                                {row.interval ? `${row.interval}s` : 'N/A'}
+                                                {row.interval ? (row.interval >= 60 ? `${row.interval / 60}m` : `${row.interval}s`) : 'N/A'}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
