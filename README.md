@@ -96,6 +96,9 @@ npm run dev
 Detailed documentation is available in the `docs/` folder:
 
 *   📖 **[Project Overview](docs/PROJECT_DOCUMENTATION.md)** - Complete system architecture.
+*   🚀 **[Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Step-by-step to Railway & Vercel.
+*   🗄️ **[Railway Database](docs/RAILWAY_DATABASE_STRUCTURE.md)** - Database setup for production.
+*   ⚙️ **[ESP32 Production](docs/ESP32_PRODUCTION_CONFIG.md)** - Config ESP32 for HTTPS/Production.
 *   🔌 **[Backend & API](docs/backend/BACKEND_DOCUMENTATION.md)** - API endpoints and logic.
 *   📡 **[ESP32 Hardware Guide](docs/esp32/ESP32_DOCUMENTATION.md)** - Wiring and code setup.
 *   🧪 **[Postman Guide](docs/postman/POSTMAN_GUIDE.md)** - API testing guide.
