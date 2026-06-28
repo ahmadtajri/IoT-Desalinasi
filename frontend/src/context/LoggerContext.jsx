@@ -1,5 +1,6 @@
-import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
+import { createContext, useState, useContext, useEffect, useRef, useMemo } from 'react';
 import sensorService from '../services/sensorService';
+import PropTypes from 'prop-types';
 
 const LoggerContext = createContext({
     isLogging: false,
@@ -19,7 +20,9 @@ const LoggerContext = createContext({
         waterTemperature: {}
     },
     pumpStatus: false, // Status ON/OFF dari ESP32
+    valveStatus: null, // Detail status valve dari ESP32
     waterWeight: 0,    // Berat air hasil (cumulative in grams)
+    isMachineActive: false, // Status mesin aktif berdasarkan sensor aktif
 });
 
 export const useLogger = () => useContext(LoggerContext);
@@ -50,6 +53,9 @@ export const LoggerProvider = ({ children }) => {
     // Pump/Relay Status from ESP32 (ON/OFF)
     const [pumpStatus, setPumpStatus] = useState(false);
 
+    // Valve Status details from ESP32
+    const [valveStatus, setValveStatus] = useState(null);
+
     // Water Weight Result (grams)
     const [waterWeight, setWaterWeight] = useState(0);
 
@@ -62,6 +68,7 @@ export const LoggerProvider = ({ children }) => {
     });
 
     // 1. SYNC STATUS WITH BACKEND ON MOUNT & PERIODICALLY
+    // Backend now returns per-user status automatically based on JWT
     const syncStatus = async () => {
         try {
             const status = await sensorService.getLoggerStatus();
@@ -77,7 +84,7 @@ export const LoggerProvider = ({ children }) => {
 
     useEffect(() => {
         syncStatus();
-        const intervalId = setInterval(syncStatus, 5000);
+        const intervalId = setInterval(syncStatus, 10000); // Sync every 10 seconds
         return () => clearInterval(intervalId);
     }, []);
 
@@ -92,6 +99,7 @@ export const LoggerProvider = ({ children }) => {
                 setRealtimeData(data.realtimeData);
                 setSensorStatus(data.sensorStatus);
                 setPumpStatus(data.pumpStatus);
+                setValveStatus(data.valveStatus || null);
                 setWaterWeight(data.waterWeight);
 
                 // Update last update timestamps
@@ -132,43 +140,85 @@ export const LoggerProvider = ({ children }) => {
                     waterTemperature: {},
                     waterLevel: {}
                 });
+                setValveStatus(null);
             }
         };
 
         fetchRealtimeData(); // Initial fetch
-        const intervalId = setInterval(fetchRealtimeData, 1000); // Fetch every 1 second
+        const intervalId = setInterval(fetchRealtimeData, 2000); // Fetch every 2 seconds
         return () => clearInterval(intervalId);
     }, []);
 
     // 3. CONTROLS (Call Backend APIs)
+    // Returns { success: boolean, error?: string } so caller can show custom alerts
     const toggleLogging = async (sensorConfig = null) => {
         try {
             if (isLogging) {
                 await sensorService.stopLogger();
                 setIsLogging(false);
+                syncStatus();
+                return { success: true };
             } else {
-                // Configure with specific sensors if provided
-                // Values can be: 'all', 'none', or specific sensor ID like 'RH1'
+                // Configure categories only (values: 'all' | 'none')
                 const config = sensorConfig || {
                     humidity: 'all',
-                    temperature: 'all'
+                    airTemperature: 'all',
+                    waterTemperature: 'all'
                 };
-                console.log('[LoggerContext] Starting logger with config:', config);
-                await sensorService.configLogger(logInterval, config);
-                await sensorService.startLogger(config);
+
+                // Frontend validation: check if at least one sensor is selected
+                const hasAnySensorSelected =
+                    config.humidity !== 'none' ||
+                    config.airTemperature !== 'none' ||
+                    config.waterTemperature !== 'none';
+
+                if (!hasAnySensorSelected) {
+                    return {
+                        success: false,
+                        error: 'Tidak bisa memulai Data Logger: Tidak ada sensor yang dipilih. Pilih minimal satu jenis sensor.',
+                        errorType: 'no_sensor'
+                    };
+                }
+
+                // Start logger with interval included - backend handles per-user
+                const result = await sensorService.startLogger(config, logInterval);
+
+                // Check if backend returned an error
+                if (result && result.success === false) {
+                    return {
+                        success: false,
+                        error: result.error || 'Gagal memulai Data Logger.',
+                        errorType: 'backend_error'
+                    };
+                }
+
                 setIsLogging(true);
                 setLogCount(0);
+                syncStatus();
+                return { success: true };
             }
-            syncStatus();
         } catch (error) {
             console.error("Error toggling logger:", error);
-            alert("Gagal menghubungi server backend. Pastikan server berjalan.");
+            const errorMessage = error.response?.data?.error || error.message || "Gagal menghubungi server backend. Pastikan server berjalan.";
+            return {
+                success: false,
+                error: errorMessage,
+                errorType: 'connection_error'
+            };
         }
     };
 
+
     const changeInterval = async (newInterval) => {
         try {
+            // Only update if the interval actually changed
+            if (logInterval === newInterval) {
+                return;
+            }
+
             setLogInterval(newInterval);
+
+            // Only send to backend if logger is running
             if (isLogging) {
                 await sensorService.configLogger(newInterval);
             }
@@ -176,6 +226,17 @@ export const LoggerProvider = ({ children }) => {
             console.error("Error updating interval:", error);
         }
     };
+
+    // Compute machine active status: machine is active if at least one sensor is active
+    const isMachineActive = useMemo(() => {
+        // Check if any sensor is active
+        const hasActiveHumidity = Object.values(sensorStatus?.humidity || {}).some(status => status === true);
+        const hasActiveAirTemp = Object.values(sensorStatus?.airTemperature || {}).some(status => status === true);
+        const hasActiveWaterTemp = Object.values(sensorStatus?.waterTemperature || {}).some(status => status === true);
+        const hasActiveWaterLevel = Object.values(sensorStatus?.waterLevel || {}).some(status => status === true);
+
+        return hasActiveHumidity || hasActiveAirTemp || hasActiveWaterTemp || hasActiveWaterLevel;
+    }, [sensorStatus]);
 
     return (
         <LoggerContext.Provider value={{
@@ -188,9 +249,15 @@ export const LoggerProvider = ({ children }) => {
             sensorStatus,
             pumpStatus,
             setPumpStatus,
-            waterWeight
+            valveStatus,
+            waterWeight,
+            isMachineActive  // Export computed machine status
         }}>
             {children}
         </LoggerContext.Provider>
     );
+};
+
+LoggerProvider.propTypes = {
+    children: PropTypes.node.isRequired
 };

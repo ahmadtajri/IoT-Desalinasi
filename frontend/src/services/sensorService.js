@@ -21,28 +21,18 @@ const sensorService = {
         return response.data;
     },
 
-    async delete(id) {
-        const response = await api.delete(`/sensors/${id}`);
-        return response.data;
-    },
-
     async deleteAll() {
         const response = await api.delete('/sensors');
         return response.data;
     },
 
-    async deleteBySensorId(sensorId) {
-        const response = await api.delete(`/sensors/sensor/${sensorId}`);
+    async deleteById(id) {
+        const response = await api.delete(`/sensors/${id}`);
         return response.data;
     },
 
-    async deleteBySensorType(sensorType) {
-        const response = await api.delete(`/sensors/type/${sensorType}`);
-        return response.data;
-    },
-
-    async deleteByInterval(interval) {
-        const response = await api.delete(`/sensors/interval/${interval}`);
+    async deleteByFilter(filterParams) {
+        const response = await api.delete('/sensors/filtered', { data: filterParams });
         return response.data;
     },
 
@@ -56,18 +46,21 @@ const sensorService = {
         return response.data;
     },
 
-    // Backend Logger Control
+    // Backend Logger Control (per-user)
     async getLoggerStatus() {
         const response = await api.get('/logger/status');
         return response.data;
     },
 
-    // sensorConfig format: { humidity: 'all'|'none'|'RH1', temperature: 'all'|'none'|'T5' }
-    async startLogger(sensorConfig = {}) {
-        const response = await api.post('/logger/start', {
+    // sensorConfig format: { humidity: 'all'|'none', airTemperature: 'all'|'none', waterTemperature: 'all'|'none' }
+    async startLogger(sensorConfig = {}, intervalMs = null) {
+        const body = {
             humidity: sensorConfig.humidity || 'all',
-            temperature: sensorConfig.temperature || 'all'
-        });
+            airTemperature: sensorConfig.airTemperature || 'all',
+            waterTemperature: sensorConfig.waterTemperature || 'all'
+        };
+        if (intervalMs) body.interval = intervalMs;
+        const response = await api.post('/logger/start', body);
         return response.data;
     },
 
@@ -80,16 +73,34 @@ const sensorService = {
         const config = { interval };
         if (sensorConfig) {
             config.humidity = sensorConfig.humidity;
-            config.temperature = sensorConfig.temperature;
+            config.airTemperature = sensorConfig.airTemperature;
+            config.waterTemperature = sensorConfig.waterTemperature;
         }
         const response = await api.post('/logger/config', config);
+        return response.data;
+    },
+
+    // Admin: get all active loggers
+    async getAllLoggerStatus() {
+        const response = await api.get('/logger/all');
+        return response.data;
+    },
+
+    // Admin: stop all loggers
+    async stopAllLoggers() {
+        const response = await api.post('/logger/stop-all');
+        return response.data;
+    },
+
+    // Admin: stop specific user's logger
+    async stopLoggerForUser(userId) {
+        const response = await api.post(`/logger/stop/${userId}`);
         return response.data;
     },
 
     exportToCSV(data, filename = 'sensor_data.csv') {
         // Validate data
         if (!data || !Array.isArray(data) || data.length === 0) {
-            console.warn('exportToCSV: No data to export');
             return false;
         }
 
@@ -119,6 +130,55 @@ const sensorService = {
         document.body.removeChild(link);
 
         return true;
+    },
+
+    /**
+     * Export sensor data as Excel (.xlsx) with multi-sheet and charts
+     * Calls backend API to generate the Excel file
+     * @param {Object} params - Query parameters (sensorTypes, limit)
+     * @returns {Promise<boolean>} - true if successful
+     */
+    async exportToExcel(params = {}) {
+        try {
+            const queryParams = {};
+            if (params.sensorTypes && params.sensorTypes.length > 0) {
+                queryParams.sensorTypes = params.sensorTypes.join(',');
+            }
+            if (params.limit) {
+                queryParams.limit = params.limit;
+            }
+
+            const response = await api.get('/sensors/export-excel', {
+                params: queryParams,
+                responseType: 'blob'
+            });
+
+            // Extract filename from Content-Disposition header or use default
+            const contentDisposition = response.headers['content-disposition'];
+            let fileName = `Laporan_Desalinasi_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="?([^";\n]+)"?/);
+                if (match) fileName = match[1];
+            }
+
+            // Create download link
+            const blob = new Blob([response.data], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            return true;
+        } catch (error) {
+            console.error('Error exporting to Excel:', error);
+            throw error;
+        }
     }
 };
 

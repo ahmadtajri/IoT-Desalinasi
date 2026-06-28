@@ -5,7 +5,24 @@ export default {
         "./src/**/*.{js,ts,jsx,tsx}",
     ],
     theme: {
-        extend: {},
+        extend: {
+            screens: {
+                'xs': '480px', // Custom breakpoint for extra small devices
+            },
+            animation: {
+                'spin-slow': 'spin 2s linear infinite',
+                'slide-in': 'slideIn 0.3s ease-out',
+            },
+            keyframes: {
+                slideIn: {
+                    '0%': { opacity: '0', transform: 'translateY(-10px)' },
+                    '100%': { opacity: '1', transform: 'translateY(0)' },
+                }
+            },
+            transitionDuration: {
+                '350': '350ms',
+            },
+        },
     },
     plugins: [],
 }

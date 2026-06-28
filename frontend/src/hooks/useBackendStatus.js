@@ -7,7 +7,7 @@ import api from '../services/api';
  * @param {number} checkInterval - Interval pengecekan dalam ms (default: 5000)
  * @returns {object} { isOnline, isChecking, lastChecked, checkStatus }
  */
-export const useBackendStatus = (checkInterval = 5000) => {
+const useBackendStatus = (checkInterval = 30000) => {
     const [isOnline, setIsOnline] = useState(false);
     const [isChecking, setIsChecking] = useState(true);
     const [lastChecked, setLastChecked] = useState(null);
@@ -31,7 +31,6 @@ export const useBackendStatus = (checkInterval = 5000) => {
             }
         } catch (error) {
             // If error (network error, timeout, etc), backend is offline
-            console.log('Backend status check failed:', error.message);
             setIsOnline(false);
             setLastChecked(new Date());
         } finally {
