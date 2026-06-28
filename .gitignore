@@ -1,0 +1,43 @@
+# General
+node_modules/
+docs/
+esp32/
+
+.DS_Store
+Thumbs.db
+*.log
+logs/
+*.enc
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backend
+backend/dist/
+backend/coverage/
+backend/pids
+backend/*.pid
+backend/npm-debug.log*
+backend/yarn-debug.log*
+backend/yarn-error.log*
+
+# Frontend
+frontend/dist/
+frontend/build/
+frontend/.eslintcache
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Other
+tmp/

@@ -3,9 +3,20 @@ const router = express.Router();
 const SensorController = require('../controllers/SensorController');
 const LoggerController = require('../controllers/LoggerController');
 const ESP32Controller = require('../controllers/ESP32Controller');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
-// Welcome endpoint - API info
+// Welcome endpoint - API info (minimal in production)
 router.get('/', (req, res) => {
+    // Production: tampilkan info minimal saja (jangan expose endpoint list)
+    if (process.env.NODE_ENV === 'production') {
+        return res.json({
+            message: 'IoT Desalinasi API',
+            version: '2.2',
+            status: 'running'
+        });
+    }
+
+    // Development: tampilkan dokumentasi lengkap
     res.json({
         message: 'ESP32 IoT Desalinasi Data Logger API',
         version: '2.2',
@@ -60,6 +71,16 @@ router.get('/', (req, res) => {
     });
 });
 
+// =============================================================
+// DEVELOPMENT ONLY: Direct inject endpoint (no auth needed)
+// =============================================================
+// if (process.env.NODE_ENV !== 'production') {
+//     router.post('/esp32/inject', ESP32Controller.injectData);
+// }
+
+// All routes below require JWT authentication
+router.use(authenticate);
+
 // Stats endpoint
 router.get('/stats', async (req, res) => {
     const DataService = require('../services/DataService');
@@ -76,25 +97,31 @@ router.get('/database/status', SensorController.getDatabaseStatus);
 // Sensor endpoints
 // IMPORTANT: Order matters! More specific routes must come BEFORE general routes
 router.get('/sensors/realtime', SensorController.getRealtimeData);
+router.get('/sensors/export-excel', SensorController.exportExcel);
 router.get('/sensors', SensorController.getAll);
 router.post('/sensors', SensorController.create);
 
-// Specific DELETE routes first
-router.delete('/sensors/sensor/:sensorId', SensorController.deleteBySensorId);
-router.delete('/sensors/type/:sensorType', SensorController.deleteBySensorType);
-router.delete('/sensors/interval/:interval', SensorController.deleteByInterval);
-router.delete('/sensors/:id', SensorController.delete);
-
-// General DELETE route last
+// DELETE routes - specific before general
+router.delete('/sensors/filtered', SensorController.deleteByFilter);
+router.delete('/sensors/:id', SensorController.deleteById);
 router.delete('/sensors', SensorController.deleteAll);
 
-// Logger endpoints
+// Logger endpoints (per-user)
 router.get('/logger/status', LoggerController.getStatus);
 router.post('/logger/start', LoggerController.start);
 router.post('/logger/stop', LoggerController.stop);
 router.post('/logger/config', LoggerController.config);
 
+// Logger admin endpoints
+router.get('/logger/all', requireAdmin, LoggerController.getAllStatus);
+router.post('/logger/stop-all', requireAdmin, LoggerController.stopAll);
+router.post('/logger/stop/:userId', requireAdmin, LoggerController.stopUser);
+
 // ESP32 endpoints - Bulk sensor data from ESP32 devices
+// NEW: Generic sensors endpoint (preferred for flexible system)
+router.post('/esp32/sensors', ESP32Controller.receiveGenericSensors);
+
+// Legacy endpoints (still supported for backward compatibility)
 router.post('/esp32/temperature', ESP32Controller.receiveTemperature);
 router.post('/esp32/humidity', ESP32Controller.receiveHumidity);
 router.post('/esp32/waterlevel', ESP32Controller.receiveWaterLevel);
@@ -104,5 +131,13 @@ router.get('/esp32/realtime', ESP32Controller.getRealtimeCache);
 router.get('/esp32/status', ESP32Controller.getStatus);
 router.delete('/esp32/cache', ESP32Controller.clearCache);
 router.post('/esp32/save', ESP32Controller.saveCacheToDatabase);
+
+// Valve control endpoints
+const valveRoutes = require('./valve');
+router.use('/valve', valveRoutes);
+
+// Daily Log endpoints
+const dailyLogRoutes = require('./dailyLogs');
+router.use('/daily-logs', dailyLogRoutes);
 
 module.exports = router;

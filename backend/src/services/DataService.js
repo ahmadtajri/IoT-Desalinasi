@@ -1,316 +1,250 @@
-// Data Service - Connected to MySQL Database with Auto-Fallback
-const mockDataStore = require('./MockDataStore');
-const { Op } = require('sequelize');
-const { shouldUseMockData, isProduction } = require('../config/database');
-
-// Dynamic check for mock data usage
-const useMockData = () => shouldUseMockData();
+// Data Service - Using Prisma ORM
+const prisma = require('../config/prisma');
 
 const DataService = {
-    async getAllData(limit = 100) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] getAllData called with limit:', limit, '| Using mock:', USE_MOCK_DATA);
+    /**
+     * Get all sensor data with optional user filter
+     */
+    async getAllData(limit = 100, userId = null) {
+        console.log('[DataService] getAllData called with limit:', limit, '| userId:', userId);
 
-        if (USE_MOCK_DATA) {
-            return await mockDataStore.findAll({
-                order: [['timestamp', 'DESC']],
-                limit: parseInt(limit)
+        const whereClause = userId ? { userId } : {};
+
+        try {
+            return await prisma.sensorData.findMany({
+                where: whereClause,
+                orderBy: { timestamp: 'desc' },
+                take: parseInt(limit),
             });
+        } catch (error) {
+            console.error('[DataService] getAllData error:', error.message);
+            throw error;
         }
+    },
 
-        const SensorData = require('../models/SensorData');
-        return await SensorData.findAll({
-            order: [['timestamp', 'DESC']],
-            limit: parseInt(limit)
+    /**
+     * Get data by sensor ID
+     */
+    async getDataBySensorId(sensorId, limit = 100, userId = null) {
+        console.log('[DataService] getDataBySensorId called:', sensorId, '| userId:', userId);
+
+        const whereClause = { sensorId };
+        if (userId) whereClause.userId = userId;
+
+        return await prisma.sensorData.findMany({
+            where: whereClause,
+            orderBy: { timestamp: 'desc' },
+            take: parseInt(limit),
         });
     },
 
-    async getDataBySensorId(sensorId, limit = 100) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] getDataBySensorId called:', sensorId, '| Using mock:', USE_MOCK_DATA);
+    /**
+     * Get data by sensor type
+     */
+    async getDataBySensorType(sensorType, limit = 100, userId = null) {
+        console.log('[DataService] getDataBySensorType called:', sensorType, '| userId:', userId);
 
-        if (USE_MOCK_DATA) {
-            return await mockDataStore.findAll({
-                where: { sensor_id: sensorId },
-                order: [['timestamp', 'DESC']],
-                limit: parseInt(limit)
-            });
-        }
+        const whereClause = { sensorType };
+        if (userId) whereClause.userId = userId;
 
-        const SensorData = require('../models/SensorData');
-        return await SensorData.findAll({
-            where: { sensor_id: sensorId },
-            order: [['timestamp', 'DESC']],
-            limit: parseInt(limit)
+        return await prisma.sensorData.findMany({
+            where: whereClause,
+            orderBy: { timestamp: 'desc' },
+            take: parseInt(limit),
         });
     },
 
-    async getDataBySensorType(sensorType, limit = 100) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] getDataBySensorType called:', sensorType, '| Using mock:', USE_MOCK_DATA);
+    /**
+     * Create new sensor data
+     */
+    async createData(sensorData, userId = null) {
+        // console.log('[DataService] createData called:', sensorData.sensor_id || sensorData.sensorId);
 
-        if (USE_MOCK_DATA) {
-            return await mockDataStore.findAll({
-                where: { sensor_type: sensorType },
-                order: [['timestamp', 'DESC']],
-                limit: parseInt(limit)
-            });
+        const dataToCreate = {
+            sensorId: sensorData.sensor_id || sensorData.sensorId,
+            sensorType: sensorData.sensor_type || sensorData.sensorType,
+            value: parseFloat(sensorData.value),
+            status: sensorData.status || 'active',
+            intervalSeconds: sensorData.interval || sensorData.intervalSeconds || null,
+            userId: userId,
+        };
+
+        // If explicit timestamp is provided (from BackgroundLogger cycle), use it
+        // This ensures all records in one cycle share the same timestamp
+        if (sensorData.timestamp) {
+            dataToCreate.timestamp = sensorData.timestamp;
         }
+        // Otherwise, Prisma will use the database default (CURRENT_TIMESTAMP)
 
-        const SensorData = require('../models/SensorData');
-        return await SensorData.findAll({
-            where: { sensor_type: sensorType },
-            order: [['timestamp', 'DESC']],
-            limit: parseInt(limit)
+        return await prisma.sensorData.create({
+            data: dataToCreate,
         });
     },
 
-    async getDataByDateRange(startDate, endDate) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] getDataByDateRange called | Using mock:', USE_MOCK_DATA);
+    /**\n     * Delete all sensor data (with optional user filter)\n     */
+    async deleteAllData(userId = null) {
+        console.log('[DataService] deleteAllData called | userId:', userId);
 
-        if (USE_MOCK_DATA) {
-            const allData = await mockDataStore.findAll({
-                order: [['timestamp', 'DESC']]
-            });
+        const whereClause = userId ? { userId } : {};
 
-            return allData.filter(item => {
-                const itemDate = new Date(item.timestamp);
-                return itemDate >= new Date(startDate) && itemDate <= new Date(endDate);
-            });
-        }
-
-        const SensorData = require('../models/SensorData');
-        return await SensorData.findAll({
-            where: {
-                timestamp: {
-                    [Op.between]: [startDate, endDate]
-                }
-            },
-            order: [['timestamp', 'DESC']]
+        return await prisma.sensorData.deleteMany({
+            where: whereClause,
         });
     },
 
-    async createData(sensorData) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] createData called:', sensorData.sensor_id, '| Using mock:', USE_MOCK_DATA);
+    /**
+     * Delete data by filter (sensorTypes or sensorIds)
+     */
+    async deleteByFilter(whereClause, userId = null) {
+        console.log('[DataService] deleteByFilter called with whereClause:', JSON.stringify(whereClause), '| userId:', userId);
 
-        if (USE_MOCK_DATA) {
-            return await mockDataStore.create(sensorData);
+        // Add userId filter if provided (for multi-tenant support)
+        if (userId) {
+            whereClause.userId = userId;
         }
 
-        const SensorData = require('../models/SensorData');
-        return await SensorData.create(sensorData);
-    },
-
-    async deleteData(id) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] deleteData called for ID:', id, '| Using mock:', USE_MOCK_DATA);
-
-        if (USE_MOCK_DATA) {
-            return await mockDataStore.destroy({
-                where: { id: parseInt(id) }
+        try {
+            const result = await prisma.sensorData.deleteMany({
+                where: whereClause,
             });
+            console.log(`[DataService] Successfully deleted ${result.count} records`);
+            return result;
+        } catch (error) {
+            console.error('[DataService] Error in deleteByFilter:', error);
+            throw error;
         }
-
-        const SensorData = require('../models/SensorData');
-        return await SensorData.destroy({
-            where: { id: id }
-        });
     },
 
-    async deleteAllData() {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] deleteAllData called | Using mock:', USE_MOCK_DATA);
+    /**
+     * Get statistics
+     */
+    async getStats(userId = null) {
+        const whereClause = userId ? { userId } : {};
 
-        if (USE_MOCK_DATA) {
-            return await mockDataStore.destroy({
-                where: {},
-                truncate: true
+        try {
+            const totalRecords = await prisma.sensorData.count({
+                where: whereClause,
             });
-        }
 
-        const SensorData = require('../models/SensorData');
-        return await SensorData.destroy({
-            where: {},
-            truncate: true
-        });
+            const humidityCount = await prisma.sensorData.count({
+                where: { ...whereClause, sensorType: 'humidity' },
+            });
+
+            const temperatureCount = await prisma.sensorData.count({
+                where: { ...whereClause, sensorType: 'temperature' },
+            });
+
+            const airTemperatureCount = await prisma.sensorData.count({
+                where: { ...whereClause, sensorType: 'air_temperature' },
+            });
+
+            const waterTemperatureCount = await prisma.sensorData.count({
+                where: { ...whereClause, sensorType: 'water_temperature' },
+            });
+
+            return {
+                totalRecords,
+                humidityCount,
+                temperatureCount,
+                airTemperatureCount,
+                waterTemperatureCount,
+            };
+        } catch (error) {
+            console.error('[DataService] Error getting stats:', error);
+            // Return empty stats on error
+            return {
+                totalRecords: 0,
+                humidityCount: 0,
+                temperatureCount: 0
+            };
+        }
     },
 
-    async deleteDataBySensorId(sensorId) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] deleteDataBySensorId called with ID:', sensorId, '| Using mock:', USE_MOCK_DATA);
+    /**
+     * Get database status
+     */
+    async getDatabaseStatus(userId = null) {
+        console.log('[DataService] getDatabaseStatus called | userId:', userId);
 
-        if (USE_MOCK_DATA) {
-            try {
-                const deleted = await mockDataStore.destroy({
-                    where: { sensor_id: sensorId }
-                });
-                console.log(`[DataService] Successfully deleted ${deleted} records for sensor ${sensorId}`);
-                return deleted;
-            } catch (error) {
-                console.error('[DataService] Error in deleteDataBySensorId:', error);
-                throw error;
+        try {
+            const whereClause = userId ? { userId } : {};
+            const totalRecords = await prisma.sensorData.count({
+                where: whereClause,
+            });
+
+            const warningLimit = 100000;
+            const criticalLimit = 500000;
+
+            let status = 'OK';
+            let message = 'Database dalam kondisi normal';
+
+            if (totalRecords >= criticalLimit) {
+                status = 'CRITICAL';
+                message = `Database hampir penuh! ${totalRecords} records. Segera hapus data lama.`;
+            } else if (totalRecords >= warningLimit) {
+                status = 'WARNING';
+                message = `Perhatian: Database mencapai ${totalRecords} records. Pertimbangkan untuk menghapus data lama.`;
             }
-        }
 
-        const SensorData = require('../models/SensorData');
-        try {
-            const deleted = await SensorData.destroy({
-                where: { sensor_id: sensorId }
-            });
-            console.log(`[DataService] Successfully deleted ${deleted} records for sensor ${sensorId}`);
-            return deleted;
-        } catch (error) {
-            console.error('[DataService] Error in deleteDataBySensorId:', error);
-            throw error;
-        }
-    },
-
-    async deleteDataBySensorType(sensorType) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] deleteDataBySensorType called with type:', sensorType, '| Using mock:', USE_MOCK_DATA);
-
-        if (USE_MOCK_DATA) {
-            try {
-                const deleted = await mockDataStore.destroy({
-                    where: { sensor_type: sensorType }
-                });
-                console.log(`[DataService] Successfully deleted ${deleted} records for type ${sensorType}`);
-                return deleted;
-            } catch (error) {
-                console.error('[DataService] Error in deleteDataBySensorType:', error);
-                throw error;
-            }
-        }
-
-        const SensorData = require('../models/SensorData');
-        try {
-            const deleted = await SensorData.destroy({
-                where: { sensor_type: sensorType }
-            });
-            console.log(`[DataService] Successfully deleted ${deleted} records for type ${sensorType}`);
-            return deleted;
-        } catch (error) {
-            console.error('[DataService] Error in deleteDataBySensorType:', error);
-            throw error;
-        }
-    },
-
-    async deleteDataByInterval(intervalSeconds) {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] deleteDataByInterval called with interval:', intervalSeconds, '| Using mock:', USE_MOCK_DATA);
-
-        if (USE_MOCK_DATA) {
-            const deleted = await mockDataStore.destroy({
-                where: { interval: parseInt(intervalSeconds) }
-            });
-            console.log(`[DataService] Successfully deleted ${deleted} records for interval ${intervalSeconds}s`);
-            return deleted;
-        }
-
-        const SensorData = require('../models/SensorData');
-        try {
-            const deleted = await SensorData.destroy({
-                where: { interval: intervalSeconds }
-            });
-            console.log(`[DataService] Successfully deleted ${deleted} records for interval ${intervalSeconds}s`);
-            return deleted;
-        } catch (error) {
-            console.error('[DataService] Error in deleteDataByInterval:', error);
-            throw error;
-        }
-    },
-
-    // Get mock data statistics
-    async getStats() {
-        const USE_MOCK_DATA = useMockData();
-        if (USE_MOCK_DATA) {
-            return mockDataStore.getStats();
-        }
-        return null;
-    },
-
-    // Get database status and warnings
-    async getDatabaseStatus() {
-        const USE_MOCK_DATA = useMockData();
-        console.log('[DataService] getDatabaseStatus called | Using mock:', USE_MOCK_DATA);
-
-        if (USE_MOCK_DATA) {
-            const stats = mockDataStore.getStats();
-            const totalRecords = stats.totalRecords;
+            // Get user count and admin count
+            const userCount = await prisma.user.count({ where: { role: 'USER' } });
+            const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
 
             return {
                 total_records: totalRecords,
                 table_size_mb: 0,
                 database_size_mb: 0,
-                status: totalRecords >= 500000 ? 'CRITICAL' : totalRecords >= 100000 ? 'WARNING' : 'OK',
-                message: totalRecords >= 500000
-                    ? `Database hampir penuh! ${totalRecords} records. Segera hapus data lama.`
-                    : totalRecords >= 100000
-                        ? `Perhatian: Database mencapai ${totalRecords} records. Pertimbangkan untuk menghapus data lama.`
-                        : 'Database dalam kondisi normal',
-                warning_threshold: 100000,
-                critical_threshold: 500000,
-                using_mock_data: true
+                status: status,
+                message: message,
+                warning_threshold: warningLimit,
+                critical_threshold: criticalLimit,
+                using_prisma: true,
+                users: {
+                    total: userCount + adminCount,
+                    admins: adminCount,
+                    users: userCount,
+                },
             };
-        }
-
-        const sequelize = require('../config/database');
-        try {
-            const [results] = await sequelize.query('CALL check_database_status()');
-
-            if (results && results.length > 0) {
-                const status = results[0];
-                return {
-                    total_records: status.total_records,
-                    table_size_mb: parseFloat(status.table_size_mb),
-                    database_size_mb: parseFloat(status.database_size_mb),
-                    status: status.status,
-                    message: status.message,
-                    warning_threshold: status.warning_threshold,
-                    critical_threshold: status.critical_threshold,
-                    using_mock_data: false
-                };
-            }
-            throw new Error('No results from SP');
         } catch (error) {
-            console.warn('[DataService] Stored Procedure failed, falling back to manual query:', error.message);
-
-            try {
-                const SensorData = require('../models/SensorData');
-                const count = await SensorData.count();
-                const warningLimit = 100000;
-                const criticalLimit = 500000;
-
-                let status = 'OK';
-                let message = 'Database status normal (Fallback Mode)';
-
-                if (count >= criticalLimit) {
-                    status = 'CRITICAL';
-                    message = `Database CRITICAL! Total records: ${count}.`;
-                } else if (count >= warningLimit) {
-                    status = 'WARNING';
-                    message = `Database Warning. Total records: ${count}.`;
-                }
-
-                return {
-                    total_records: count,
-                    table_size_mb: 0,
-                    database_size_mb: 0,
-                    status: status,
-                    message: message,
-                    warning_threshold: warningLimit,
-                    critical_threshold: criticalLimit,
-                    using_mock_data: false,
-                    fallback_mode: true
-                };
-            } catch (fallbackError) {
-                console.error('[DataService] Fallback also failed:', fallbackError);
-                throw fallbackError;
-            }
+            console.error('[DataService] Error in getDatabaseStatus:', error);
+            throw error;
         }
-    }
+    },
+
+    /**
+     * Delete single record by ID
+     */
+    async deleteById(id) {
+        console.log('[DataService] deleteById called with id:', id);
+        try {
+            return await prisma.sensorData.delete({
+                where: { id: parseInt(id) },
+            });
+        } catch (error) {
+            console.error('[DataService] deleteById error:', error.message);
+            throw error;
+        }
+    },
+
+    /**
+     * Bulk create sensor data (for logger)
+     */
+    async bulkCreate(dataArray, userId = null, intervalSeconds = null) {
+        console.log('[DataService] bulkCreate called with', dataArray.length, 'records | userId:', userId);
+
+        const formattedData = dataArray.map((item) => ({
+            sensorId: item.sensor_id || item.sensorId,
+            sensorType: item.sensor_type || item.sensorType,
+            value: parseFloat(item.value),
+            status: item.status || 'active',
+            intervalSeconds: intervalSeconds || item.interval || item.intervalSeconds || null,
+            userId: userId,
+        }));
+
+        return await prisma.sensorData.createMany({
+            data: formattedData,
+        });
+    },
 };
 
 module.exports = DataService;

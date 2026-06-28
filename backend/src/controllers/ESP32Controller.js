@@ -1,97 +1,114 @@
 /**
  * ESP32 Controller
- * Handles bulk sensor data from ESP32 devices
+ * Handles API endpoints for ESP32 sensor data
  * 
- * ESP32 sends data in format: {"T1": 25.5, "T2": 26.0, ...} or {"RH1": 65.0, "RH2": 70.0, ...}
- * This controller converts that to individual sensor records
+ * NEW: Supports Generic Sensor Format
+ * ESP32 sends { "S1": 25.5, "S2": 70.0, ... } to /api/esp32/sensors
+ * Admin maps sensor IDs to categories and names via /api/sensor-config
+ * 
+ * Data Flow:
+ * - ESP32 → MQTT → MqttService → realtimeCache
+ * - Frontend → HTTP GET → ESP32Controller → MqttService.getCache()
+ * 
+ * HTTP endpoints are kept for backward compatibility but MQTT is preferred
  */
 
 const DataService = require('../services/DataService');
-
-// In-memory cache for real-time data (not persisted to DB immediately)
-const realtimeCache = {
-    temperature: {},  // { "T1": { value: 25.5, timestamp: "..." }, ... }
-    humidity: {},     // { "RH1": { value: 65.0, timestamp: "..." }, ... }
-    waterLevel: {},   // { "WL1": { value: 75, timestamp: "..." }, ... }
-    waterWeight: {},  // { "WW1": { value: 500.5, timestamp: "..." }, ... }
-    valveStatus: { status: 'closed', level: 0, timestamp: null }, // Valve control status
-    lastUpdate: null
-};
+const MqttService = require('../services/MqttService');
 
 const ESP32Controller = {
     /**
-     * Receive temperature data from ESP32
+     * NEW: Receive generic sensor data from ESP32 via HTTP
+     * POST /api/esp32/sensors
+     * Body: { "S1": 25.5, "S2": 70.0, "S3": 45.0, ... }
+     * 
+     * This is the PREFERRED endpoint for the flexible sensor system
+     * Sensor IDs can be anything (S1, S2, T1, RH1, etc.)
+     * Admin will map them to categories via the admin panel
+     */
+    async receiveGenericSensors(req, res) {
+        try {
+            const data = req.body;
+            const timestamp = new Date().toISOString();
+
+            console.log('[ESP32-HTTP] Received generic sensor data:', JSON.stringify(data));
+
+            // Validate that we have data
+            if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No sensor data received',
+                    expected: '{ "S1": 25.5, "S2": 70.0, ... }',
+                    preferMqtt: 'esp32/sensors'
+                });
+            }
+
+            // Forward to MQTT for processing (if connected)
+            if (MqttService.getConnectionStatus()) {
+                MqttService.publish(MqttService.TOPICS.SENSORS, data);
+            }
+
+            // Also process directly in case MQTT is not connected
+            const sensorCount = Object.keys(data).length;
+
+            res.json({
+                success: true,
+                message: 'Generic sensor data received',
+                received: sensorCount,
+                sensorIds: Object.keys(data),
+                timestamp: timestamp,
+                note: 'Use esp32/sensors MQTT topic for real-time updates'
+            });
+
+        } catch (error) {
+            console.error('[ESP32-HTTP] Error receiving generic sensors:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
+    },
+
+    /**
+     * Receive temperature data from ESP32 via HTTP (backup/legacy)
      * POST /api/esp32/temperature
      * Body: { "T1": 25.5, "T2": 26.0, "T3": 27.5, ... }
+     * 
+     * NOTE: Prefer MQTT topic: iot/desalinasi/temperature
      */
     async receiveTemperature(req, res) {
         try {
             const data = req.body;
             const timestamp = new Date().toISOString();
 
-            console.log('[ESP32] Received temperature data:', JSON.stringify(data));
+            console.log('[ESP32-HTTP] Received temperature data:', JSON.stringify(data));
+            console.log('[ESP32-HTTP] ⚠️  Consider using MQTT instead: iot/desalinasi/temperature');
 
             // Validate that we have data
             if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'No temperature data received',
-                    expected: '{ "T1": 25.5, "T2": 26.0, ... }'
+                    expected: '{ "T1": 25.5, "T2": 26.0, ... }',
+                    preferMqtt: 'iot/desalinasi/temperature'
                 });
             }
 
-            const validSensors = [];
-            const invalidSensors = [];
-
-            // Process each sensor reading
-            for (const [sensorId, value] of Object.entries(data)) {
-                // Validate sensor ID format (T1-T15)
-                if (!/^T([1-9]|1[0-5])$/.test(sensorId)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid sensor ID format' });
-                    continue;
-                }
-
-                // Validate value
-                if (typeof value !== 'number' || isNaN(value)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid value (must be number)' });
-                    continue;
-                }
-
-                // Validate temperature range (-40°C to 80°C for DHT22)
-                if (value < -40 || value > 80) {
-                    invalidSensors.push({ sensorId, value, reason: 'Value out of range (-40 to 80°C)' });
-                    continue;
-                }
-
-                // Update real-time cache
-                // Update real-time cache
-                realtimeCache.temperature[sensorId] = {
-                    value: value,
-                    timestamp: timestamp,
-                    receivedAt: Date.now(),
-                    status: 'active'
-                };
-
-                validSensors.push({ sensorId, value });
+            // Forward to MQTT for processing (if connected)
+            if (MqttService.getConnectionStatus()) {
+                MqttService.publish(MqttService.TOPICS.TEMPERATURE, data);
             }
-
-            // Update last update timestamp
-            realtimeCache.lastUpdate = timestamp;
-
-            console.log(`[ESP32] Temperature: ${validSensors.length} valid, ${invalidSensors.length} invalid`);
 
             res.json({
                 success: true,
-                message: 'Temperature data received',
-                received: validSensors.length,
-                cached: true,
+                message: 'Temperature data received (HTTP legacy)',
+                received: Object.keys(data).length,
                 timestamp: timestamp,
-                sensors: validSensors,
-                invalid: invalidSensors.length > 0 ? invalidSensors : undefined
+                note: 'Consider switching to MQTT: iot/desalinasi/temperature'
             });
 
         } catch (error) {
-            console.error('[ESP32] Error receiving temperature:', error);
+            console.error('[ESP32-HTTP] Error receiving temperature:', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -100,78 +117,43 @@ const ESP32Controller = {
     },
 
     /**
-     * Receive humidity data from ESP32
+     * Receive humidity data from ESP32 via HTTP (backup/legacy)
      * POST /api/esp32/humidity
      * Body: { "RH1": 65.0, "RH2": 70.0, "RH3": 68.5, ... }
+     * 
+     * NOTE: Prefer MQTT topic: iot/desalinasi/humidity
      */
     async receiveHumidity(req, res) {
         try {
             const data = req.body;
             const timestamp = new Date().toISOString();
 
-            console.log('[ESP32] Received humidity data:', JSON.stringify(data));
+            console.log('[ESP32-HTTP] Received humidity data:', JSON.stringify(data));
+            console.log('[ESP32-HTTP] ⚠️  Consider using MQTT instead: iot/desalinasi/humidity');
 
-            // Validate that we have data
             if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'No humidity data received',
-                    expected: '{ "RH1": 65.0, "RH2": 70.0, ... }'
+                    expected: '{ "RH1": 65.0, "RH2": 70.0, ... }',
+                    preferMqtt: 'iot/desalinasi/humidity'
                 });
             }
 
-            const validSensors = [];
-            const invalidSensors = [];
-
-            // Process each sensor reading
-            for (const [sensorId, value] of Object.entries(data)) {
-                // Validate sensor ID format (RH1-RH7)
-                if (!/^RH[1-7]$/.test(sensorId)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid sensor ID format' });
-                    continue;
-                }
-
-                // Validate value
-                if (typeof value !== 'number' || isNaN(value)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid value (must be number)' });
-                    continue;
-                }
-
-                // Validate humidity range (0-100%)
-                if (value < 0 || value > 100) {
-                    invalidSensors.push({ sensorId, value, reason: 'Value out of range (0-100%)' });
-                    continue;
-                }
-
-                // Update real-time cache
-                // Update real-time cache
-                realtimeCache.humidity[sensorId] = {
-                    value: value,
-                    timestamp: timestamp,
-                    receivedAt: Date.now(),
-                    status: 'active'
-                };
-
-                validSensors.push({ sensorId, value });
+            if (MqttService.getConnectionStatus()) {
+                MqttService.publish(MqttService.TOPICS.HUMIDITY, data);
             }
-
-            // Update last update timestamp
-            realtimeCache.lastUpdate = timestamp;
-
-            console.log(`[ESP32] Humidity: ${validSensors.length} valid, ${invalidSensors.length} invalid`);
 
             res.json({
                 success: true,
-                message: 'Humidity data received',
-                received: validSensors.length,
-                cached: true,
+                message: 'Humidity data received (HTTP legacy)',
+                received: Object.keys(data).length,
                 timestamp: timestamp,
-                sensors: validSensors,
-                invalid: invalidSensors.length > 0 ? invalidSensors : undefined
+                note: 'Consider switching to MQTT: iot/desalinasi/humidity'
             });
 
         } catch (error) {
-            console.error('[ESP32] Error receiving humidity:', error);
+            console.error('[ESP32-HTTP] Error receiving humidity:', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -180,78 +162,42 @@ const ESP32Controller = {
     },
 
     /**
-     * Receive water level data from ESP32
+     * Receive water level data from ESP32 via HTTP (backup/legacy)
      * POST /api/esp32/waterlevel
      * Body: { "WL1": 75 }
+     * 
+     * NOTE: Prefer MQTT topic: iot/desalinasi/waterlevel
      */
     async receiveWaterLevel(req, res) {
         try {
             const data = req.body;
             const timestamp = new Date().toISOString();
 
-            console.log('[ESP32] Received water level data:', JSON.stringify(data));
+            console.log('[ESP32-HTTP] Received water level data:', JSON.stringify(data));
 
-            // Validate that we have data
             if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'No water level data received',
-                    expected: '{ "WL1": 75 }'
+                    expected: '{ "WL1": 75 }',
+                    preferMqtt: 'iot/desalinasi/waterlevel'
                 });
             }
 
-            const validSensors = [];
-            const invalidSensors = [];
-
-            // Process each sensor reading
-            for (const [sensorId, value] of Object.entries(data)) {
-                // Validate sensor ID format (WL1)
-                if (!/^WL[1-9]$/.test(sensorId)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid sensor ID format' });
-                    continue;
-                }
-
-                // Validate value
-                if (typeof value !== 'number' || isNaN(value)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid value (must be number)' });
-                    continue;
-                }
-
-                // Validate water level range (0-100%)
-                if (value < 0 || value > 100) {
-                    invalidSensors.push({ sensorId, value, reason: 'Value out of range (0-100%)' });
-                    continue;
-                }
-
-                // Update real-time cache
-                // Update real-time cache
-                realtimeCache.waterLevel[sensorId] = {
-                    value: value,
-                    timestamp: timestamp,
-                    receivedAt: Date.now(),
-                    status: 'active'
-                };
-
-                validSensors.push({ sensorId, value });
+            if (MqttService.getConnectionStatus()) {
+                MqttService.publish(MqttService.TOPICS.WATERLEVEL, data);
             }
-
-            // Update last update timestamp
-            realtimeCache.lastUpdate = timestamp;
-
-            console.log(`[ESP32] Water Level: ${validSensors.length} valid, ${invalidSensors.length} invalid`);
 
             res.json({
                 success: true,
-                message: 'Water level data received',
-                received: validSensors.length,
-                cached: true,
+                message: 'Water level data received (HTTP legacy)',
+                received: Object.keys(data).length,
                 timestamp: timestamp,
-                sensors: validSensors,
-                invalid: invalidSensors.length > 0 ? invalidSensors : undefined
+                note: 'Consider switching to MQTT: iot/desalinasi/waterlevel'
             });
 
         } catch (error) {
-            console.error('[ESP32] Error receiving water level:', error);
+            console.error('[ESP32-HTTP] Error receiving water level:', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -260,71 +206,42 @@ const ESP32Controller = {
     },
 
     /**
-     * Receive water weight data from ESP32 (Load Cell)
+     * Receive water weight data from ESP32 via HTTP (backup/legacy)
      * POST /api/esp32/waterweight
      * Body: { "WW1": 500.5 }
+     * 
+     * NOTE: Prefer MQTT topic: iot/desalinasi/waterweight
      */
     async receiveWaterWeight(req, res) {
         try {
             const data = req.body;
             const timestamp = new Date().toISOString();
 
-            console.log('[ESP32] Received water weight data:', JSON.stringify(data));
+            console.log('[ESP32-HTTP] Received water weight data:', JSON.stringify(data));
 
-            // Validate that we have data
             if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'No water weight data received',
-                    expected: '{ "WW1": 500.5 }'
+                    expected: '{ "WW1": 500.5 }',
+                    preferMqtt: 'iot/desalinasi/waterweight'
                 });
             }
 
-            const validSensors = [];
-            const invalidSensors = [];
-
-            // Process each sensor reading
-            for (const [sensorId, value] of Object.entries(data)) {
-                // Validate sensor ID format (WW1)
-                if (!/^WW[1-9]$/.test(sensorId)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid sensor ID format' });
-                    continue;
-                }
-
-                // Validate value
-                if (typeof value !== 'number' || isNaN(value)) {
-                    invalidSensors.push({ sensorId, reason: 'Invalid value (must be number)' });
-                    continue;
-                }
-
-                // Update real-time cache
-                realtimeCache.waterWeight[sensorId] = {
-                    value: value,
-                    timestamp: timestamp,
-                    receivedAt: Date.now(),
-                    status: 'active'
-                };
-
-                validSensors.push({ sensorId, value });
+            if (MqttService.getConnectionStatus()) {
+                MqttService.publish(MqttService.TOPICS.WATERWEIGHT, data);
             }
-
-            // Update last update timestamp
-            realtimeCache.lastUpdate = timestamp;
-
-            console.log(`[ESP32] Water Weight: ${validSensors.length} valid, ${invalidSensors.length} invalid`);
 
             res.json({
                 success: true,
-                message: 'Water weight data received',
-                received: validSensors.length,
-                cached: true,
+                message: 'Water weight data received (HTTP legacy)',
+                received: Object.keys(data).length,
                 timestamp: timestamp,
-                sensors: validSensors,
-                invalid: invalidSensors.length > 0 ? invalidSensors : undefined
+                note: 'Consider switching to MQTT: iot/desalinasi/waterweight'
             });
 
         } catch (error) {
-            console.error('[ESP32] Error receiving water weight:', error);
+            console.error('[ESP32-HTTP] Error receiving water weight:', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -333,47 +250,42 @@ const ESP32Controller = {
     },
 
     /**
-     * Receive valve status from ESP32
+     * Receive valve status from ESP32 via HTTP (backup/legacy)
      * POST /api/esp32/valve
      * Body: { "status": "open" | "closed", "level": 15.5 }
+     * 
+     * NOTE: Prefer MQTT topic: iot/desalinasi/valve
      */
     async receiveValveStatus(req, res) {
         try {
             const { status, level } = req.body;
             const timestamp = new Date().toISOString();
 
-            console.log('[ESP32] Received valve status:', JSON.stringify(req.body));
+            console.log('[ESP32-HTTP] Received valve status:', JSON.stringify(req.body));
 
-            // Validate data
             if (!status || (status !== 'open' && status !== 'closed')) {
                 return res.status(400).json({
                     success: false,
                     error: 'Invalid valve status',
-                    expected: '{ "status": "open" | "closed", "level": 15.5 }'
+                    expected: '{ "status": "open" | "closed", "level": 15.5 }',
+                    preferMqtt: 'iot/desalinasi/valve'
                 });
             }
 
-            // Update valve status in cache
-            realtimeCache.valveStatus = {
-                status: status,
-                level: level || 0,
-                timestamp: timestamp,
-                receivedAt: Date.now()
-            };
-
-            realtimeCache.lastUpdate = timestamp;
-
-            console.log(`[ESP32] Valve status updated: ${status.toUpperCase()}`);
+            if (MqttService.getConnectionStatus()) {
+                MqttService.publish(MqttService.TOPICS.VALVE, req.body);
+            }
 
             res.json({
                 success: true,
-                message: 'Valve status received',
+                message: 'Valve status received (HTTP legacy)',
                 status: status,
-                timestamp: timestamp
+                timestamp: timestamp,
+                note: 'Consider switching to MQTT: iot/desalinasi/valve'
             });
 
         } catch (error) {
-            console.error('[ESP32] Error receiving valve status:', error);
+            console.error('[ESP32-HTTP] Error receiving valve status:', error);
             res.status(500).json({
                 success: false,
                 error: error.message
@@ -386,51 +298,60 @@ const ESP32Controller = {
      * GET /api/esp32/realtime
      */
     getRealtimeCache(req, res) {
+        const cache = MqttService.getCache();
+
         // Organize data for frontend consumption
         const response = {
             humidity: {},
             airTemperature: {},
             waterTemperature: {},
             waterLevel: {},
+            waterWeight: {},
+            valveStatus: cache.valveStatus || { status: 'closed', level: 0 },
             sensorStatus: {
                 humidity: {},
-                airTemperature: {},
-                waterTemperature: {},
                 airTemperature: {},
                 waterTemperature: {},
                 waterLevel: {},
                 waterWeight: {}
             },
-            lastUpdate: realtimeCache.lastUpdate,
-            timestamp: new Date().toISOString()
+            lastUpdate: cache.lastUpdate,
+            timestamp: new Date().toISOString(),
+            mqttConnected: MqttService.getConnectionStatus()
         };
 
         // Process humidity data
-        for (const [sensorId, data] of Object.entries(realtimeCache.humidity)) {
+        for (const [sensorId, data] of Object.entries(cache.humidity || {})) {
             response.humidity[sensorId] = data.value;
             response.sensorStatus.humidity[sensorId] = data.status === 'active';
         }
 
-        // Process temperature data (T1-T7 = air, T8-T15 = water)
-        for (const [sensorId, data] of Object.entries(realtimeCache.temperature)) {
-            const sensorNum = parseInt(sensorId.substring(1));
-            if (sensorNum <= 7) {
+        // Process temperature data (T1-T6, T_X = air, T7-T15 = water)
+        for (const [sensorId, data] of Object.entries(cache.temperature || {})) {
+            // T_X is from DHT22 extra sensor (air temperature)
+            if (sensorId === 'T_X') {
                 response.airTemperature[sensorId] = data.value;
                 response.sensorStatus.airTemperature[sensorId] = data.status === 'active';
             } else {
-                response.waterTemperature[sensorId] = data.value;
-                response.sensorStatus.waterTemperature[sensorId] = data.status === 'active';
+                const sensorNum = parseInt(sensorId.substring(1));
+                if (sensorNum <= 6) {
+                    response.airTemperature[sensorId] = data.value;
+                    response.sensorStatus.airTemperature[sensorId] = data.status === 'active';
+                } else {
+                    response.waterTemperature[sensorId] = data.value;
+                    response.sensorStatus.waterTemperature[sensorId] = data.status === 'active';
+                }
             }
         }
 
         // Process water level data
-        for (const [sensorId, data] of Object.entries(realtimeCache.waterLevel)) {
+        for (const [sensorId, data] of Object.entries(cache.waterLevel || {})) {
             response.waterLevel[sensorId] = data.value;
             response.sensorStatus.waterLevel[sensorId] = data.status === 'active';
         }
 
         // Process water weight data
-        for (const [sensorId, data] of Object.entries(realtimeCache.waterWeight)) {
+        for (const [sensorId, data] of Object.entries(cache.waterWeight || {})) {
             response.waterWeight[sensorId] = data.value;
             response.sensorStatus.waterWeight[sensorId] = data.status === 'active';
         }
@@ -443,20 +364,31 @@ const ESP32Controller = {
      * GET /api/esp32/status
      */
     getStatus(req, res) {
-        const temperatureCount = Object.keys(realtimeCache.temperature).length;
-        const humidityCount = Object.keys(realtimeCache.humidity).length;
-        const waterLevelCount = Object.keys(realtimeCache.waterLevel).length;
+        const cache = MqttService.getCache();
+        const temperatureCount = Object.keys(cache.temperature || {}).length;
+        const humidityCount = Object.keys(cache.humidity || {}).length;
+        const waterLevelCount = Object.keys(cache.waterLevel || {}).length;
+        const waterWeightCount = Object.keys(cache.waterWeight || {}).length;
 
         res.json({
             status: 'online',
+            protocol: 'MQTT',
+            mqttConnected: MqttService.getConnectionStatus(),
             cache: {
                 temperatureSensors: temperatureCount,
                 humiditySensors: humidityCount,
                 waterLevelSensors: waterLevelCount,
-                waterWeightSensors: Object.keys(realtimeCache.waterWeight).length,
-                totalSensors: temperatureCount + humidityCount + waterLevelCount + Object.keys(realtimeCache.waterWeight).length
+                waterWeightSensors: waterWeightCount,
+                totalSensors: temperatureCount + humidityCount + waterLevelCount + waterWeightCount
             },
-            lastUpdate: realtimeCache.lastUpdate,
+            topics: {
+                suhu: MqttService.TOPICS.SUHU,
+                kelembapan: MqttService.TOPICS.KELEMBAPAN,
+                waterlevel: MqttService.TOPICS.WATERLEVEL,
+                waterweight: MqttService.TOPICS.WATERWEIGHT,
+                valve: MqttService.TOPICS.VALVE
+            },
+            lastUpdate: cache.lastUpdate,
             uptime: process.uptime(),
             timestamp: new Date().toISOString()
         });
@@ -467,13 +399,7 @@ const ESP32Controller = {
      * DELETE /api/esp32/cache
      */
     clearCache(req, res) {
-        realtimeCache.temperature = {};
-        realtimeCache.humidity = {};
-        realtimeCache.waterLevel = {};
-        realtimeCache.waterWeight = {};
-        realtimeCache.lastUpdate = null;
-
-        console.log('[ESP32] Cache cleared');
+        MqttService.clearCache();
 
         res.json({
             success: true,
@@ -487,11 +413,12 @@ const ESP32Controller = {
      */
     async saveCacheToDatabase(req, res) {
         try {
+            const cache = MqttService.getCache();
             const savedRecords = [];
             const timestamp = new Date();
 
             // Save temperature data
-            for (const [sensorId, data] of Object.entries(realtimeCache.temperature)) {
+            for (const [sensorId, data] of Object.entries(cache.temperature || {})) {
                 const record = await DataService.createData({
                     sensor_id: sensorId,
                     sensor_type: 'temperature',
@@ -503,7 +430,7 @@ const ESP32Controller = {
             }
 
             // Save humidity data
-            for (const [sensorId, data] of Object.entries(realtimeCache.humidity)) {
+            for (const [sensorId, data] of Object.entries(cache.humidity || {})) {
                 const record = await DataService.createData({
                     sensor_id: sensorId,
                     sensor_type: 'humidity',
@@ -534,33 +461,9 @@ const ESP32Controller = {
         }
     },
 
-    // Export cache for use by BackgroundLogger
     // Export cache for use by BackgroundLogger and Frontend
     getCache() {
-        const CACHE_TTL = 30000; // 30 seconds
-        const now = Date.now();
-        const processedCache = JSON.parse(JSON.stringify(realtimeCache));
-
-        // Helper to check expiry
-        const checkExpiry = (category) => {
-            if (!processedCache[category]) return;
-            for (const sensorId in processedCache[category]) {
-                const sensor = processedCache[category][sensorId];
-                // If data is older than TTL, mark as inactive
-                if (sensor.receivedAt && (now - sensor.receivedAt > CACHE_TTL)) {
-                    sensor.status = 'inactive';
-                    // Optional: You can choose to nullify value if strictly needed
-                    // sensor.value = null; 
-                }
-            }
-        };
-
-        checkExpiry('humidity');
-        checkExpiry('temperature');
-        checkExpiry('waterLevel');
-        checkExpiry('waterWeight');
-
-        return processedCache;
+        return MqttService.getCache();
     }
 };
 

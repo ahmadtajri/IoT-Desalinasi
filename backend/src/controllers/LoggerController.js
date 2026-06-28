@@ -1,53 +1,152 @@
-const BackgroundLogger = require('../services/BackgroundLogger');
+const LoggerManager = require('../services/BackgroundLogger');
 
 const LoggerController = {
+    /**
+     * Get logger status for the authenticated user
+     */
     getStatus: (req, res) => {
-        const status = BackgroundLogger.getStatus();
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const status = LoggerManager.getStatusForUser(userId);
         res.json(status);
     },
 
-    start: (req, res) => {
-        const { humidity, temperature } = req.body;
+    /**
+     * Get all loggers status (admin only)
+     */
+    getAllStatus: (req, res) => {
+        const allStatus = LoggerManager.getAllStatus();
+        res.json({ success: true, ...allStatus });
+    },
 
-        // Configure specific sensors if provided
-        // Values can be: true/'all', false/'none', or specific sensor ID like 'RH1', 'T5'
+    /**
+     * Start logger for the authenticated user
+     */
+    start: async (req, res) => {
+        const userId = req.user?.id;
+        const username = req.user?.username;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const { humidity, airTemperature, waterTemperature, temperature, interval } = req.body;
+
+        // Configure sensor categories
+        const tempFallback = temperature !== undefined ? temperature : 'all';
         const sensorConfig = {
             humidity: humidity !== undefined ? humidity : 'all',
-            temperature: temperature !== undefined ? temperature : 'all'
+            airTemperature: airTemperature !== undefined ? airTemperature : tempFallback,
+            waterTemperature: waterTemperature !== undefined ? waterTemperature : tempFallback
         };
 
-        BackgroundLogger.setSensorConfig(sensorConfig);
-        BackgroundLogger.start();
-        res.json({ message: 'Logger started', status: BackgroundLogger.getStatus() });
+        // Use interval from request body, or user's active interval from DB, or default
+        const intervalMs = interval || null;
+
+        try {
+            const result = await LoggerManager.startForUser(userId, username, intervalMs, sensorConfig);
+
+            if (result && !result.success) {
+                return res.status(400).json({
+                    success: false,
+                    error: result.message,
+                    status: LoggerManager.getStatusForUser(userId)
+                });
+            }
+
+            res.json({
+                success: true,
+                message: `Logger started untuk ${username}`,
+                status: LoggerManager.getStatusForUser(userId)
+            });
+        } catch (error) {
+            console.error('[LoggerController] Error starting logger:', error);
+            res.status(500).json({ success: false, error: 'Gagal memulai Data Logger' });
+        }
     },
 
+    /**
+     * Stop logger for the authenticated user
+     */
     stop: (req, res) => {
-        BackgroundLogger.stop();
-        res.json({ message: 'Logger stopped', status: BackgroundLogger.getStatus() });
+        const userId = req.user?.id;
+        const username = req.user?.username;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        LoggerManager.stopForUser(userId);
+        res.json({
+            success: true,
+            message: `Logger stopped untuk ${username}`,
+            status: LoggerManager.getStatusForUser(userId)
+        });
     },
 
+    /**
+     * Configure logger for the authenticated user
+     */
     config: (req, res) => {
-        const { interval, humidity, temperature } = req.body;
-
-        // Update interval if provided
-        if (interval && typeof interval === 'number') {
-            BackgroundLogger.setIntervalTime(interval);
+        const userId = req.user?.id;
+        const username = req.user?.username;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
         }
 
-        // Update sensor config if any sensor parameter is provided
-        if (humidity !== undefined || temperature !== undefined) {
-            const sensorConfig = {};
+        const { interval, humidity, airTemperature, waterTemperature, temperature } = req.body;
+
+        // Build sensor config if any provided
+        let sensorConfig = null;
+        if (humidity !== undefined || airTemperature !== undefined || waterTemperature !== undefined || temperature !== undefined) {
+            sensorConfig = {};
             if (humidity !== undefined) sensorConfig.humidity = humidity;
-            if (temperature !== undefined) sensorConfig.temperature = temperature;
-
-            BackgroundLogger.setSensorConfig(sensorConfig);
+            if (airTemperature !== undefined) sensorConfig.airTemperature = airTemperature;
+            if (waterTemperature !== undefined) sensorConfig.waterTemperature = waterTemperature;
+            if (temperature !== undefined && airTemperature === undefined) sensorConfig.airTemperature = temperature;
+            if (temperature !== undefined && waterTemperature === undefined) sensorConfig.waterTemperature = temperature;
         }
 
-        if (!interval && humidity === undefined && temperature === undefined) {
+        if (!interval && !sensorConfig) {
             return res.status(400).json({ error: 'No valid configuration provided' });
         }
 
-        res.json({ message: 'Logger configured', status: BackgroundLogger.getStatus() });
+        const status = LoggerManager.configForUser(userId, username, interval, sensorConfig);
+
+        res.json({
+            success: true,
+            message: 'Logger configured',
+            status
+        });
+    },
+
+    /**
+     * Stop a specific user's logger (admin only)
+     */
+    stopUser: (req, res) => {
+        const { userId } = req.params;
+        if (!userId) {
+            return res.status(400).json({ success: false, error: 'Missing userId' });
+        }
+        LoggerManager.stopForUser(parseInt(userId));
+        res.json({
+            success: true,
+            message: `Logger stopped for user ${userId}`,
+            status: LoggerManager.getStatusForUser(parseInt(userId))
+        });
+    },
+
+    /**
+     * Stop all loggers (admin only)
+     */
+    stopAll: (req, res) => {
+        LoggerManager.stopAll();
+        res.json({
+            success: true,
+            message: 'All loggers stopped',
+            ...LoggerManager.getAllStatus()
+        });
     }
 };
 

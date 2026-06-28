@@ -1,0 +1,196 @@
+// Prisma Schema for IoT Desalinasi System
+// Multi-user support with Admin and User roles
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// User model with role-based access
+model User {
+  id              Int       @id @default(autoincrement())
+  username        String    @unique @db.VarChar(50)
+  email           String    @unique @db.VarChar(100)
+  password        String    @db.VarChar(255)
+  role            Role      @default(USER)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  sensorData        SensorData[]
+  dailyLogs         DailyLog[]
+  uploadedSchemas   DesalinationSchema[]
+  valveConfigs      ValveConfig[]
+  sensorCategories  SensorCategory[]
+  sensorConfigs     SensorConfig[]
+  createdUsers      User[]    @relation("AdminCreatedUsers")
+  createdBy         User?     @relation("AdminCreatedUsers", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById       Int?
+  
+  // Active Interval Selection
+  activeInterval   LoggerInterval? @relation(fields: [activeIntervalId], references: [id], onDelete: SetNull)
+  activeIntervalId Int?
+
+  @@map("users")
+  @@index([username])
+  @@index([email])
+}
+
+// Role enum
+enum Role {
+  ADMIN
+  USER
+}
+
+// Global Logger Intervals (Managed by Admin)
+model LoggerInterval {
+  id              Int       @id @default(autoincrement())
+  intervalSeconds Int       @unique // Interval in seconds
+  intervalName    String    @db.VarChar(50) 
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  activeUsers     User[]
+  
+  @@map("logger_intervals")
+}
+
+// Sensor data with user association
+model SensorData {
+  id              Int       @id @default(autoincrement())
+  sensorId        String    @db.VarChar(10) // e.g., "H1", "T1", "WL1"
+  sensorType      String    @db.VarChar(20) // "humidity", "temperature", "water_level"
+  value           Float
+  status          String    @db.VarChar(20) @default("active") // "active", "inactive", "warning"
+  timestamp       DateTime  @default(now())
+  intervalSeconds Int?      // Interval logging yang digunakan (null untuk realtime)
+  userId          Int?      // User yang memiliki data ini (null untuk data umum/realtime)
+  
+  // Relations
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("sensor_data")
+  @@index([sensorId, timestamp])
+  @@index([userId])
+  @@index([timestamp])
+  @@index([sensorType])
+}
+
+
+
+// Desalination Schema (SVG) - Admin can upload/update
+model DesalinationSchema {
+  id              Int       @id @default(autoincrement())
+  fileName        String    @db.VarChar(255)
+  svgContent      String    @db.LongText // Store SVG as text
+  version         Int       @default(1)
+  isActive        Boolean   @default(true)
+  uploadedBy      Int?      // Admin who uploaded
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  uploader        User?     @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+  
+  @@map("desalination_schemas")
+  @@index([isActive])
+  @@index([uploadedBy])
+}
+
+// Sensor Category - Admin-defined sensor categories
+model SensorCategory {
+  id              Int       @id @default(autoincrement())
+  name            String    @unique @db.VarChar(50) // e.g., "humidity", "air_temperature", "water_temperature"
+  displayName     String    @db.VarChar(100) // e.g., "Kelembaban", "Suhu Udara"
+  icon            String?   @db.VarChar(50) // Icon name for frontend
+  color           String?   @db.VarChar(20) // Color code for frontend
+  unit            String    @db.VarChar(10) @default("") // Default unit for this category
+  sortOrder       Int       @default(0) // Display order in lists
+  isActive        Boolean   @default(true)
+  createdById     Int?      // Admin who created this category
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  sensorConfigs   SensorConfig[]
+  createdByUser   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  
+  @@map("sensor_categories")
+  @@index([createdById])
+}
+
+// Sensor Configuration - Custom names and settings
+model SensorConfig {
+  id              Int       @id @default(autoincrement())
+  sensorId        String    @unique @db.VarChar(20) // Generic ID from ESP32: "S1", "S2", etc.
+  displayName     String    @db.VarChar(100) // Custom display name set by admin
+  sensorType      String    @db.VarChar(20) // "temperature", "humidity", "water_level", "water_weight"
+  categoryId      Int?      // Link to SensorCategory
+  unit            String    @db.VarChar(10) @default("") // "°C", "%", etc
+  isEnabled       Boolean   @default(true) // Show/hide sensor
+  isConfigured    Boolean   @default(false) // Has admin configured this sensor?
+  minValue        Float?    // Optional min threshold for alerts
+  maxValue        Float?    // Optional max threshold for alerts
+  sortOrder       Int       @default(0) // Display order
+  description     String?   @db.VarChar(255) // Optional description
+  lastSeenAt      DateTime? // Last time data was received from this sensor
+  configuredById  Int?      // Admin who configured this sensor
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relations
+  category        SensorCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  configuredBy    User?           @relation(fields: [configuredById], references: [id], onDelete: SetNull)
+  
+  @@map("sensor_configs")
+  @@index([sensorType])
+  @@index([isEnabled])
+  @@index([categoryId])
+  @@index([isConfigured])
+  @@index([configuredById])
+}
+
+// Global valve configuration (single row)
+model ValveConfig {
+  id           Int      @id @default(autoincrement())
+  onThreshold  Float
+  offThreshold Float
+  updatedById  Int?     // Admin who last updated
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  updatedBy    User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("valve_config")
+  @@index([updatedById])
+}
+
+// Daily Log - Auto-saved CSV per user per day
+model DailyLog {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @db.Date              // Tanggal log (YYYY-MM-DD)
+  userId      Int?                            // User pemilik data (null = system/all)
+  userName    String?  @db.VarChar(50)        // Snapshot username saat generate
+  fileName    String   @db.VarChar(255)       // e.g. "sensor_report_jaja_2026-02-14.csv"
+  csvContent  String   @db.LongText          // Konten CSV
+  recordCount Int      @default(0)           // Jumlah baris data
+  fileSize    Int      @default(0)           // Ukuran file (bytes)
+  isDeletedByUser Boolean @default(false)    // Soft delete untuk user (hanya disembunyikan dari user)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("daily_logs")
+  @@unique([date, userId])
+  @@index([date])
+  @@index([userId])
+}
